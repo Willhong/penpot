@@ -296,7 +296,8 @@
       "availableLibraries",
       "connectLibrary",
       "connected",
-      "local"
+      "local",
+      "tokensSource"
     ],
     "LibraryElement": ["id", "libraryId", "name", "path"],
     "LibrarySummary": [
@@ -538,6 +539,7 @@
       "addTheme",
       "getSetById",
       "getThemeById",
+      "isEditableTokens",
       "sets",
       "themes"
     ],
@@ -5252,6 +5254,12 @@
         "type": "Library",
         "array": true
       },
+      "tokensSource": {
+        "decl": "LibraryContext",
+        "kind": "getset",
+        "type": "Library",
+        "array": false
+      },
       "availableLibraries": {
         "decl": "LibraryContext",
         "kind": "method",
@@ -9274,6 +9282,12 @@
       }
     },
     "TokenCatalog": {
+      "isEditableTokens": {
+        "decl": "TokenCatalog",
+        "kind": "get",
+        "type": null,
+        "array": false
+      },
       "themes": {
         "decl": "TokenCatalog",
         "kind": "get",
