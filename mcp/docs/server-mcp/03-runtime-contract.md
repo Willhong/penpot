@@ -133,7 +133,7 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 | `validation` | 입력 또는 변경이 스키마·파일 검증을 통과하지 못함 | 없음 |
 | `revn-conflict` / `vern-conflict` | backend 충돌 (버전 복원 등) | 없음. 다시 읽은 뒤 재시도 가능 |
 | `precondition-failed` | D4의 선택적 사전 조건 위반 | 없음 |
-| `ui-only` | D8에서 (c)로 정한 member | 없음 |
+| `ui-only` | D8에서 (c)로 정한 member, 또는 (f) member를 'AI 따라가기'를 켠 탭 없이 호출했을 때 | 없음 |
 | `resource-limit` | §2 제한 초과 | 없음 |
 | `cancelled` | 저장 전 취소 | 없음 |
 | `engine-error` | 계산 엔진 오류 | 없음 |
@@ -158,6 +158,7 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 | PEN-15 | cljc + npm 토큰 해석 | `externalId` 선언대로 제공 | E5 |
 | PEN-16 | media RPC, SVG 파서 | §4 이미지 공급 | E6 |
 | PEN-17 | cljc | — | PEN-5 |
+| PEN-24 | mcp server 연결, frontend 따라가기 UI, 화면 이동 신호 | D8 (f) 규칙, 지연 D7 | PEN-4, PEN-10 |
 | PEN-18 | comments RPC | 알림은 backend가 보냄 | PEN-10 |
 | PEN-19 | exporter headless, code-gen | §5, exporter token 인증(E10) | E7, E10 |
 | PEN-20 | DocumentSession undo stack | 실행 1회 = undo 1단위, 실패 시 저장 없음 | PEN-10 |

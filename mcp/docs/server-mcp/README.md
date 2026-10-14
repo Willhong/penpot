@@ -12,7 +12,7 @@
 
 | 문서 | Plane | 내용 | 상태 |
 |---|---|---|---|
-| [01-feature-contract.md](01-feature-contract.md) | PEN-1 | 기능 범위, 인증, 대상 지정, 저장·충돌·중복·취소, UI 전용 API | 범위 확정, D1–D7·D9 확정, D8 재논의 중 |
+| [01-feature-contract.md](01-feature-contract.md) | PEN-1 | 기능 범위, 인증, 대상 지정, 저장·충돌·중복·취소, UI 전용 API | 범위 확정, D1–D9 확정 |
 | [feature-inventory.md](feature-inventory.md) | PEN-1 | member·도구별 담당 티켓과 검증 시나리오 (생성 파일) | 미매핑 0 |
 | [verification-env.md](verification-env.md) | PEN-2 | 운영과 분리한 검증 스택 사용법 | 완료 |
 | [02-browser-dependency-research.md](02-browser-dependency-research.md) | PEN-7 | 기능별 브라우저 의존성, 서버 경로 대안, 실험 E1–E3 | 완료, 미확인 E4–E11 목록 |
@@ -28,6 +28,6 @@
 ## 다음 구현 작업(PEN-22)이 시작할 때
 
 1. 새 worktree에서 `scripts/mcp-verify-env up && scripts/mcp-verify-env wait && scripts/mcp-verify-env seed`를 실행한다. 이어서 E1을 실행해 환경을 확인한다.
-2. `01`의 D1–D9와 `03`의 D10 결정 결과를 확인한다. 결정되지 않은 항목(D8)은 제안대로 구현하지 않는다.
+2. `01`의 D1–D9와 `03`의 D10 결정 결과를 확인한다. D1–D10은 모두 확정됐다.
 3. 첫 작업은 E4다. Node headless render-wasm으로 계산 API를 부르는 하네스를 만든다. 이 결과에 따라 PEN-11·12·13의 경로가 정해진다.
 4. PEN-10에서 공용 구성 요소의 interface를 먼저 확정한다. 다른 티켓은 그 interface에 맞춰 병렬로 진행한다(`03` §9).
