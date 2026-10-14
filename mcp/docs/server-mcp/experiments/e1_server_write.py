@@ -15,10 +15,13 @@
 #   scripts/mcp-verify-env up && scripts/mcp-verify-env wait && scripts/mcp-verify-env seed
 #   python3 -I mcp/docs/server-mcp/experiments/e1_server_write.py [--file basic] [--x 100 --y 100]
 #
+# Set MCPV_PROJECT when the stack runs under another project name.
+#
 # Prints one JSON report on stdout.
 
 import argparse
 import json
+import os
 import ssl
 import subprocess
 import sys
@@ -30,7 +33,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURES = ROOT / ".mcp-verify/fixtures.json"
-MAIN = "penpot-mcpverify-main"
+MAIN = os.environ.get("MCPV_PROJECT", "penpot-mcpverify") + "-main"
 
 CONTEXT = ssl.create_default_context()
 CONTEXT.check_hostname = False

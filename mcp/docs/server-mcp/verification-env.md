@@ -113,4 +113,15 @@ scripts/mcp-verify-env destroy --yes # 이 스택 볼륨까지 제거
 
 1. 새 worktree에서 `scripts/mcp-verify-env up`을 실행한다. 이전 스택이 같은 포트로 떠 있으면 먼저 `down`하거나 `MCPV_*` 포트·이름을 바꾼다.
 2. `wait` → `seed` → `python3 -I mcp/docs/server-mcp/experiments/e1_server_write.py --file scratch`로 저장 경로를 확인한다.
-3. 볼륨은 project 이름 단위로 나뉜다. 같은 `MCPV_PROJECT`를 쓰면 이전 테스트 데이터를 이어 쓰고, 다른 이름을 쓰면 빈 DB로 시작한다.
+3. 볼륨은 project 이름 단위로 나뉜다. 같은 `MCPV_PROJECT`를 쓰면 이전 테스트 데이터를 이어 쓰고, 다른 이름을 쓰면 빈 DB로 시작한다. 다른 이름으로 띄웠다면 실험 스크립트에도 같은 `MCPV_PROJECT`를 준다.
+
+### 재현 확인 (2026-10-14)
+
+순서:
+1. 커밋 `a390ee779`로 새 worktree를 만들었다. `node_modules`·볼륨·캐시가 모두 없는 상태였다.
+2. `MCPV_PROJECT=penpot-mcpverify-repro`와 포트 3649/3650/4601/1280으로 `up` → `wait` → `seed` → E1을 실행했다.
+
+결과:
+- `up`부터 모든 서비스 준비까지 5분 15초가 걸렸다. 의존성 다운로드와 컴파일이 모두 포함된 시간이다.
+- E1 결과가 원래 스택과 같았다. 저장 200, viewer·outsider 404, 오래된 revn 수락, 앞선 revn `revn-conflict`, 재전송 시 중복 없음.
+- `destroy --yes`가 `penpot-mcpverify-repro_*` 볼륨 5개만 지우고 원래 스택의 볼륨을 남겼음을 확인했다.
