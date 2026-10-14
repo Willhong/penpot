@@ -4,7 +4,7 @@
 - `01-feature-contract.md`: 기능 범위, 사용자 정책
 - `02-browser-dependency-research.md`: 기술 조사, 실험
 
-상태: **기술 계약은 확정했다.** 단, 아래 'blocker'로 표시한 계산 경로는 실증 전이다. 그 경로를 쓰는 구현은 blocker 실험이 통과해야 완료할 수 있다. D10은 사용자 결정을 기다린다.
+상태: **기술 계약은 확정했다.** 단, 아래 'blocker'로 표시한 계산 경로는 실증 전이다. 그 경로를 쓰는 구현은 blocker 실험이 통과해야 완료할 수 있다. D10은 2026-10-15에 사용자가 선택지 1로 확정했다.
 
 ## 1. 구성 요소와 경계
 
@@ -27,21 +27,21 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 - 실행기가 쓰는 cljs 빌드는 frontend와 같은 `common` 소스와 같은 render-wasm 빌드 산출물을 쓴다. 서로 다른 버전을 섞지 않는다. 배포 단위로 frontend 버전 문자열을 응답에 넣는다.
 - mcp server는 지금처럼 도구 등록, 세션, multi-instance 라우팅을 맡는다. 실행 대상만 '브라우저 플러그인'에서 '실행기'로 바꾼다. 기존 플러그인 경로는 PEN-21 공존 기간 동안 남긴다.
 
-### D10 [사용자 결정] '브라우저 없이'의 범위
+### D10 [사용자 결정 · 2026-10-15 확정] '브라우저 없이'의 범위
 
-- 선택지 1 (제안, 경로 A): 서버에서도 Chromium을 쓰지 않는다. 계산은 Node + headless render-wasm으로 하고, 출력도 exporter의 headless wasm 경로만 쓴다.
+- 선택지 1 (결정, 경로 A): 서버에서도 Chromium을 쓰지 않는다. 계산은 Node + headless render-wasm으로 하고, 출력도 exporter의 headless wasm 경로만 쓴다.
 - 선택지 2: 사용자 브라우저만 없으면 된다. 서버의 headless Chromium(경로 C)을 계산·출력의 보조 경로로 허용한다.
   - 장점: E4가 실패해도 기능을 낼 수 있다.
   - 비용: 세션당 수백 MB, 처리 시간이 수 초 단위로 는다.
 
-선택지 1로 정하면 E4가 실패할 경우 PEN-12/13 구현이 막힌다. 그 경우 다시 결정을 요청한다.
+선택지 1로 정했으므로 E4가 실패할 경우 PEN-12/13 구현이 막힌다. 그 경우 다시 결정을 요청한다.
 
 ## 2. 실행 격리와 자원 제한
 
 **[기술 결정]**
 - 실행 하나는 새 격리 실행 단위 하나를 쓴다. 예: worker thread의 별도 V8 isolate, 또는 프로세스 풀의 프로세스. 같은 사용자의 이전 실행과 전역 상태를 공유하지 않는다. 예외는 세션 `storage`이며, 직렬화할 수 있는 값만 넘긴다.
 - sandbox에 주는 전역은 `penpot`, `penpotMgmt`, `penpotUtils`, `storage`, `console`뿐이다. `require`/`import`, 파일 시스템, 네트워크, 타이머 남용을 막는다. `setTimeout`은 실행 제한 시간 안에서만 허용한다.
-- 제한값(D9 확정 전 기본값): 시간 120초, 힙 256 MB, 변경 5,000개, 결과 JSON 10 MB.
+- 제한값(D9): 시간 120초, 힙 256 MB, 변경 5,000개, 결과 JSON 10 MB.
   - 초과하면 실행 단위를 종료하고 아무것도 저장하지 않은 채 `resource-limit`를 돌려준다.
   - render-wasm 힙은 별도로 센다. 초기 256 MB에 상한을 두고, 이미지 캐시는 exporter의 `wasm-worker-image-cache-size` 방식을 따른다.
 - 취소: mcp server가 취소를 받으면 실행 단위를 종료한다. 저장 요청을 보내기 전이면 `cancelled`(저장 없음)로 응답한다. 이미 보냈으면 저장 결과(revn)로 응답한다(D6).
