@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+#
+# Isolated Penpot stack for verifying the server-side MCP work.
+#
+# Owns its own compose project, network, volumes, Valkey and ports, so it
+# never touches the shared devenv infra (penpotdev-infra), other workspaces
+# or any production data. Runs the checkout that contains this script.
+# Usage and design: mcp/docs/server-mcp/verification-env.md
+#
+# Works with the macOS system Bash 3.2 (no associative arrays or mapfile).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_PATH="${MCPV_SOURCE_PATH:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+COMPOSE_FILE="$SOURCE_PATH/docker/mcp-verify/docker-compose.yml"
+STATE_DIR="$SOURCE_PATH/.mcp-verify"
+LOG_DIR="$STATE_DIR/logs"
+
+export MCPV_PROJECT="${MCPV_PROJECT:-penpot-mcpverify}"
+export MCPV_HTTPS_PORT="${MCPV_HTTPS_PORT:-3549}"
+export MCPV_HTTP_PORT="${MCPV_HTTP_PORT:-3550}"
+export MCPV_MCP_PORT="${MCPV_MCP_PORT:-4501}"
+export MCPV_MAIL_PORT="${MCPV_MAIL_PORT:-1180}"
+export MCPV_DEVENV_TAG="${MCPV_DEVENV_TAG:-latest}"
+export MCPV_MCP_MODE="${MCPV_MCP_MODE:-multi}"
+export MCPV_WITH_EXPORTER="${MCPV_WITH_EXPORTER:-true}"
+export MCPV_SOURCE_PATH="$SOURCE_PATH"
+export MCPV_UID="$(id -u)"
+
+MAIN="${MCPV_PROJECT}-main"
+POSTGRES="${MCPV_PROJECT}-postgres"
+BASE_URI="https://localhost:${MCPV_HTTPS_PORT}"
+
+function compose {
+    docker compose -p "$MCPV_PROJECT" -f "$COMPOSE_FILE" "$@"
+}
+
+function main-running {
+    [[ "$(docker inspect -f '{{.State.Running}}' "$MAIN" 2>/dev/null || true)" == "true" ]]
+}
+
+function require-running {
+    if ! main-running; then
+        echo "mcp-verify: $MAIN is not running (run: scripts/mcp-verify-env up)" >&2
+        exit 1
+    fi
+}
+
+# Fails when a host port the stack publishes is taken by something that is
+# not this stack.
+function check-ports {
+    local port owner
+    for port in "$MCPV_HTTPS_PORT" "$MCPV_HTTP_PORT" "$MCPV_MCP_PORT" "$MCPV_MAIL_PORT"; do
+        if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+            owner="$(docker ps --filter "publish=$port" --format '{{.Names}}' | head -n1)"
+            if [[ "$owner" != "${MCPV_PROJECT}-"* ]]; then
+                echo "mcp-verify: host port $port is in use (${owner:-non-docker process})." >&2
+                echo "  Override with MCPV_HTTPS_PORT / MCPV_HTTP_PORT / MCPV_MCP_PORT / MCPV_MAIL_PORT." >&2
+                exit 1
+            fi
+        fi
+    done
+}
+
+function print-info {
+    cat <<EOF
+
+[mcp-verify] project: $MCPV_PROJECT   source: $SOURCE_PATH
+  Penpot UI (HTTPS):  $BASE_URI
+  Penpot UI (HTTP):   http://localhost:${MCPV_HTTP_PORT}
+  MCP stream:         http://localhost:${MCPV_MCP_PORT}/mcp  (mode: $MCPV_MCP_MODE)
+  Mailpit:            http://localhost:${MCPV_MAIL_PORT}
+  Logs:               $LOG_DIR/<service>.log
+  Fixtures:           $STATE_DIR/fixtures.json (after: scripts/mcp-verify-env seed)
+EOF
+}
+
+function cmd-up {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --single-user) export MCPV_MCP_MODE=single; shift;;
+            --no-exporter) export MCPV_WITH_EXPORTER=false; shift;;
+            *) echo "up: unknown argument '$1'" >&2; exit 1;;
+        esac
+    done
+
+    if main-running; then
+        echo "mcp-verify: already running"
+        print-info
+        return 0
+    fi
+
+    check-ports
+    mkdir -p "$LOG_DIR"
+
+    compose up -d --wait --wait-timeout 120 postgres rustfs mailer
+    compose up -d valkey main
+
+    # The image entrypoint re-owns /opt/rustup and /home/penpot/.cargo before
+    # exec-ing init.sh (which starts nginx). Starting the services earlier
+    # makes rustup fail with permission errors.
+    local deadline=$(( SECONDS + 300 ))
+    until docker exec "$MAIN" pgrep -x nginx >/dev/null 2>&1; do
+        if [[ $SECONDS -ge $deadline ]]; then
+            echo "mcp-verify: container entrypoint did not finish within 300s" >&2
+            exit 1
+        fi
+        sleep 2
+    done
+
+    docker exec "$MAIN" sudo chown penpot:users /home/penpot
+    docker exec -d "$MAIN" sudo -EH -u penpot \
+        PENPOT_TENANT="$MCPV_PROJECT" \
+        MCPV_MCP_MODE="$MCPV_MCP_MODE" \
+        MCPV_WITH_EXPORTER="$MCPV_WITH_EXPORTER" \
+        bash /home/mcp-verify/start-services.sh
+
+    echo "[mcp-verify] services are starting; the first start compiles"
+    echo "  frontend, render-wasm, backend and MCP (can take 10-30 min)."
+    echo "  Wait for readiness with: scripts/mcp-verify-env wait"
+    print-info
+}
+
+function http-code {
+    curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "$@" || true
+}
+
+# Prints one line per service with its readiness state; exit status 0 only
+# when every required service is ready.
+function probe {
+    local ok=0 code
+
+    code="$(http-code -X POST -H 'content-type: application/json' -d '{}' \
+        "$BASE_URI/api/main/methods/get-profile")"
+    if [[ "$code" == "200" ]]; then echo "backend   ready"; else echo "backend   not ready ($code)"; ok=1; fi
+
+    # main.js exists long before shadow-cljs finishes; the last :main build
+    # event in the log is the reliable signal.
+    local main_build
+    main_build="$(grep -aoE '\[:main\] (Compiling|Build completed|Build failure)' "$LOG_DIR/frontend.log" 2>/dev/null | tail -n1 || true)"
+    if [[ "$main_build" == "[:main] Build completed" && "$(http-code "$BASE_URI/")" == "200" ]]; then
+        echo "frontend  ready"
+    else
+        echo "frontend  not ready (${main_build:-no build yet})"; ok=1
+    fi
+
+    if docker exec "$MAIN" test -f /home/penpot/penpot/mcp/packages/plugin/dist/manifest.json 2>/dev/null; then
+        echo "plugin    ready"
+    else
+        echo "plugin    not ready"; ok=1
+    fi
+
+    code="$(http-code -X POST -H 'content-type: application/json' \
+        -H 'accept: application/json, text/event-stream' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' \
+        "http://localhost:${MCPV_MCP_PORT}/mcp")"
+    if [[ "$code" =~ ^(200|400|406)$ ]]; then echo "mcp       ready ($code)"; else echo "mcp       not ready ($code)"; ok=1; fi
+
+    if [[ "$MCPV_WITH_EXPORTER" == "true" ]]; then
+        if docker exec "$MAIN" bash -c 'exec 3<>/dev/tcp/127.0.0.1/6061' 2>/dev/null; then
+            echo "exporter  ready"
+        else
+            echo "exporter  not ready"; ok=1
+        fi
+    fi
+    return $ok
+}
+
+function cmd-status {
+    compose ps
+    if main-running; then
+        echo
+        probe || true
+    fi
+    print-info
+}
+
+function cmd-wait {
+    local timeout="${1:-2400}" deadline
+    require-running
+    deadline=$(( SECONDS + timeout ))
+    until probe >/dev/null 2>&1; do
+        if [[ $SECONDS -ge $deadline ]]; then
+            echo "mcp-verify: not ready after ${timeout}s" >&2
+            probe || true
+            echo "  Check: $LOG_DIR/*.log" >&2
+            exit 1
+        fi
+        sleep 10
+    done
+    probe
+}
+
+function cmd-logs {
+    local name="${1:-}"
+    if [[ -z "$name" ]]; then
+        ls -1 "$LOG_DIR"
+        return 0
+    fi
+    tail -n "${2:-200}" "$LOG_DIR/$name.log"
+}
+
+function cmd-seed {
+    require-running
+    python3 -I "$SOURCE_PATH/docker/mcp-verify/seed.py" \
+        --base-uri "$BASE_URI" \
+        --main-container "$MAIN" \
+        --postgres-container "$POSTGRES" \
+        --out "$STATE_DIR/fixtures.json" "$@"
+}
+
+function cmd-shell {
+    require-running
+    if [[ $# -gt 0 ]]; then
+        docker exec -i "$MAIN" sudo -EH -u penpot bash -lc "$*"
+    else
+        docker exec -ti "$MAIN" sudo -EH -u penpot bash
+    fi
+}
+
+function cmd-psql {
+    docker exec -i "$POSTGRES" psql -U penpot -d penpot "$@"
+}
+
+# Stops and removes the containers; the stack's volumes stay.
+function cmd-down {
+    compose down -t 5
+}
+
+# Deletes this stack's volumes only (never another project's).
+function cmd-destroy {
+    if [[ "${1:-}" != "--yes" ]]; then
+        echo "destroy removes the ${MCPV_PROJECT}_* volumes (test DB, storage, caches)."
+        echo "Re-run with --yes to confirm."
+        exit 1
+    fi
+    compose down -t 5 -v
+}
+
+function usage {
+    cat <<EOF
+Usage: scripts/mcp-verify-env <command>
+
+  up [--single-user] [--no-exporter]  start the isolated stack (MCP multi-user by default)
+  wait [SECONDS]                     block until backend/frontend/plugin/MCP respond
+  status                             containers + readiness + URLs
+  seed [--reset-tokens]              create test users, team, files, tokens
+  logs [SERVICE [LINES]]             list or tail service logs
+  shell [CMD...]                     shell (or command) in the main container
+  psql [ARGS...]                     psql on the stack's own database
+  down                               stop and remove containers, keep volumes
+  destroy --yes                      remove containers and this stack's volumes
+
+Environment overrides: MCPV_PROJECT, MCPV_HTTPS_PORT, MCPV_HTTP_PORT,
+MCPV_MCP_PORT, MCPV_MAIL_PORT, MCPV_DEVENV_TAG, MCPV_MCP_MODE, MCPV_WITH_EXPORTER
+EOF
+}
+
+command="${1:-}"
+[[ $# -gt 0 ]] && shift
+
+case "$command" in
+    up) cmd-up "$@";;
+    wait) cmd-wait "$@";;
+    status) cmd-status;;
+    seed) cmd-seed "$@";;
+    logs) cmd-logs "$@";;
+    shell) cmd-shell "$@";;
+    psql) cmd-psql "$@";;
+    down) cmd-down;;
+    destroy) cmd-destroy "$@";;
+    *) usage; [[ -z "$command" || "$command" == "help" || "$command" == "-h" ]] || exit 1;;
+esac

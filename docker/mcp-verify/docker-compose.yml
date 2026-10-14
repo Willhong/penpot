@@ -1,0 +1,147 @@
+# Isolated verification stack for the server-side MCP work.
+#
+# Unlike docker/devenv, nothing here is shared with other Penpot devenv
+# instances: the network, every volume, every container name and the Valkey
+# instance belong to this stack only. Driven by scripts/mcp-verify-env, which
+# injects the variables below; see mcp/docs/server-mcp/verification-env.md.
+
+name: ${MCPV_PROJECT}
+
+networks:
+  default:
+    name: ${MCPV_PROJECT}_net
+
+volumes:
+  postgres_data:
+    name: ${MCPV_PROJECT}_postgres_data
+  rustfs_data:
+    name: ${MCPV_PROJECT}_rustfs_data
+  valkey_data:
+    name: ${MCPV_PROJECT}_valkey_data
+  mailpit_data:
+    name: ${MCPV_PROJECT}_mailpit_data
+  user_data:
+    name: ${MCPV_PROJECT}_user_data
+
+services:
+  postgres:
+    image: postgres:18.6
+    container_name: ${MCPV_PROJECT}-postgres
+    command: postgres -c config_file=/etc/postgresql.conf
+    stop_signal: SIGINT
+    environment:
+      - POSTGRES_INITDB_ARGS=--data-checksums
+      - POSTGRES_DB=penpot
+      - POSTGRES_USER=penpot
+      - POSTGRES_PASSWORD=penpot
+    volumes:
+      - ../devenv/files/postgresql.conf:/etc/postgresql.conf:z
+      - ../devenv/files/postgresql_init.sql:/docker-entrypoint-initdb.d/init.sql:z
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    container_name: ${MCPV_PROJECT}-rustfs
+    command: /data
+    volumes:
+      - rustfs_data:/data
+    environment:
+      - RUSTFS_ACCESS_KEY=penpot-devenv
+      - RUSTFS_SECRET_KEY=penpot-devenv
+      - RUSTFS_ADDRESS=:9000
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:9000/health"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  valkey:
+    image: valkey/valkey:8.1
+    container_name: ${MCPV_PROJECT}-valkey
+    command: valkey-server --save 120 1 --loglevel warning
+    volumes:
+      - valkey_data:/data
+
+  mailer:
+    image: axllent/mailpit:v1.31.1
+    container_name: ${MCPV_PROJECT}-mailer
+    volumes:
+      - mailpit_data:/data
+    environment:
+      - MP_DATABASE=/data/mailpit.db
+      - MP_MAX_MESSAGES=5000
+      - MP_DISABLE_VERSION_CHECK=true
+    ports:
+      - "127.0.0.1:${MCPV_MAIL_PORT}:8025"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8025/readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  main:
+    privileged: true
+    image: penpotapp/devenv:${MCPV_DEVENV_TAG}
+    container_name: ${MCPV_PROJECT}-main
+    stop_signal: SIGINT
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+      mailer:
+        condition: service_healthy
+    volumes:
+      - user_data:/home/penpot/
+      - ${MCPV_SOURCE_PATH}:/home/penpot/penpot:z
+      - ./files/start-services.sh:/home/mcp-verify/start-services.sh:ro
+    # Loopback only: the stack is a local test bed, never a shared server.
+    ports:
+      - "127.0.0.1:${MCPV_HTTPS_PORT}:3449"
+      - "127.0.0.1:${MCPV_HTTP_PORT}:3450"
+      - "127.0.0.1:${MCPV_MCP_PORT}:4401"
+    environment:
+      - EXTERNAL_UID=${MCPV_UID}
+      - TERM=xterm-256color
+
+      - PENPOT_SMTP_ENABLED=true
+      - PENPOT_SMTP_DEFAULT_FROM=no-reply@example.com
+      - PENPOT_SMTP_DEFAULT_REPLY_TO=no-reply@example.com
+      - PENPOT_SMTP_HOST=mailer
+      - PENPOT_SMTP_PORT=1025
+      - PENPOT_SMTP_USERNAME=
+      - PENPOT_SMTP_PASSWORD=
+      - PENPOT_SMTP_SSL=false
+      - PENPOT_SMTP_TLS=false
+
+      - PENPOT_HOST=devenv
+      - PENPOT_PUBLIC_URI=https://localhost:${MCPV_HTTPS_PORT}
+      - PENPOT_DATABASE_URI=postgresql://postgres/penpot
+      - PENPOT_DATABASE_USERNAME=penpot
+      - PENPOT_DATABASE_PASSWORD=penpot
+      - PENPOT_DATABASE_MAX_POOL_SIZE=20
+      - PENPOT_REDIS_URI=redis://valkey/0
+      - PENPOT_TEST_DATABASE_URI=postgresql://postgres/penpot_test
+      - PENPOT_TEST_REDIS_URI=redis://valkey/6
+      - PENPOT_OBJECTS_STORAGE_BACKEND=s3
+      - PENPOT_OBJECTS_STORAGE_S3_ENDPOINT=http://rustfs:9000
+      - PENPOT_OBJECTS_STORAGE_S3_BUCKET=penpot
+      - PENPOT_OBJECTS_STORAGE_S3_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=penpot-devenv
+      - AWS_SECRET_ACCESS_KEY=penpot-devenv
+      - AWS_DEFAULT_REGION=us-east-1
+      - PENPOT_TENANT=${MCPV_PROJECT}
+      - PENPOT_BACKEND_WORKER=true
+      - PENPOT_TMUX_ATTACH=false
+      - SHADOW_SERVER_URL=wss://localhost:${MCPV_HTTPS_PORT}
+
+      # Read by files/start-services.sh.
+      - MCPV_MCP_MODE=${MCPV_MCP_MODE}
+      - MCPV_WITH_EXPORTER=${MCPV_WITH_EXPORTER}
