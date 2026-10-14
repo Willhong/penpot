@@ -116,3 +116,7 @@ For parallel devenvs, prefer same-origin MCP routing: each Penpot instance shoul
 - The MCP server emits `1008` for a missing `userToken` in multi-user mode, for missing/invalid connection metadata, and to close a connection displaced by a newer one with the same user and session ID.
 - Session IDs are deterministic per tab and file, so a reconnect reuses its ID while the old socket may be half-open: the newest connection wins (`PluginBridge.displaceConnection`). Across instances, each new connection publishes a session claim on a per-user Redis channel; an instance displaces its local connection only on a foreign claim that arrives after its own claim (channel order, no clocks). Discovery deduplicates by session ID.
 - A tab rejected with `1008` never reaches `connected`, so the frontend's 60s reconnect watcher (`start-reconnect-watcher` in `app.main.data.workspace.mcp`, started only on `connected`) does not engage; recovery is manual via the MCP menu.
+
+## Server-side (browserless) MCP
+
+When working on running Penpot editing/export without a user browser (executor, auth by access token, isolated test stack `scripts/mcp-verify-env`, scope check of all Plugin API members, known backend save/conflict facts): `mem:mcp/server-side-mcp`.
