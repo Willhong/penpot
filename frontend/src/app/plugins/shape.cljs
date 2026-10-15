@@ -1267,6 +1267,9 @@
                  (u/changes-component-copy-structure? objects shape child-shape)
                  (u/not-valid plugin-id :appendChild "Cannot change the structure of a component copy")
 
+                 (or (= child-id id) (some #{child-id} (cfh/get-parent-ids objects id)))
+                 (u/not-valid plugin-id :appendChild "Cannot move a shape into itself or into one of its children")
+
                  :else
                  (st/emit!
                   (dwsh/relocate-shapes #{child-id} id index)
@@ -1305,6 +1308,9 @@
 
                  (u/changes-component-copy-structure? objects shape child-shape)
                  (u/not-valid plugin-id :insertChild "Cannot change the structure of a component copy")
+
+                 (or (= child-id id) (some #{child-id} (cfh/get-parent-ids objects id)))
+                 (u/not-valid plugin-id :insertChild "Cannot move a shape into itself or into one of its children")
 
                  :else
                  (st/emit!
@@ -2099,6 +2105,11 @@
 
                    (not (cfh/path-shape? data))
                    (u/not-valid plugin-id :content-type type)
+
+                   ;; the parser drops what it cannot read: a string with no
+                   ;; path data in it would empty the shape
+                   (and (string? value) (re-find #"\S" value) (empty? segments))
+                   (u/not-valid plugin-id :content value)
 
                    (not (sm/validate path/schema:segments segments))
                    (u/not-valid plugin-id :content segments)

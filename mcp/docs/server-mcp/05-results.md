@@ -113,3 +113,22 @@ AI는 editor의 MCP 호출, 탭 p2는 같은 editor의 브라우저, 탭 p1은 o
 고친 결손:
 - 실행기가 실행이 끝날 때 `penpot.on` listener를 지워서, 다른 사람이 저장한 변경을 들을 수 없었다(계약은 `:file-change`로 만든 이벤트). 브라우저 플러그인처럼 세션 동안 남긴다.
 - 브라우저 탭은 포인터를 움직일 때만 화면을 알렸다. 단축키 확대·스크롤처럼 포인터 없이 바뀐 화면과, 나중에 들어온 세션은 그 탭의 화면을 몰랐다.
+
+## PEN-11 계층·변환·패스·Boolean (2026-10-15, `experiments/pen11_hierarchy.py`)
+
+`dual_run.py`로 같은 코드를 브라우저(wasm)와 서버에서 실행해 비교했다. 실행기 변경은 필요 없었다.
+
+| 확인 | 결과 |
+|---|---|
+| `pen11_structure.js`: 그룹·중첩 그룹·해제, clone, 부모 변경(회전한 board 안으로 포함), `insertChild`, z-order 4종과 `setParentIndex`, 가로·세로 정렬과 분배, 회전(중심 지정 포함)·반전, constraints, 마스크 설정·해제, path `d`·`commands`, Boolean 4종, flatten | 반환값(트리·좌표·크기·회전·반전·`toD()`) 같음. 저장된 도형 41개의 모든 속성(selrect, points, transform, path·bool content) 같음. 관찰 탭에 새로고침 없이 0.5초 안에 반영, 새로고침 뒤에도 같음 |
+| `pen11_refusals.js`: 부모 순환, 잘못된 path·Boolean 종류·index·변환 값 21가지 | 답(오류 메시지)과 남은 트리 같음 |
+| 구조 편집 뒤 코드가 오류를 던짐(서버만) | 아무것도 저장되지 않고, 세션의 트리도 실행 전으로 돌아감 |
+
+고친 결손(브라우저 플러그인과 공통인 Plugin API, `frontend/src/app/plugins/`):
+- 도형을 자기 자신이나 자기 자식 안으로 옮기는 `appendChild`/`insertChild`가 오류 없이 무시됐다. 거부한다.
+- 읽을 수 있는 path 명령이 하나도 없는 문자열을 `path.d`에 넣으면 오류 없이 도형 내용이 지워졌다. 거부하고 내용을 지킨다.
+- `penpot.ungroup`에 그룹·Boolean·board가 아닌 도형을 주면 오류 없이 무시됐다. 거부한다.
+
+바꾸지 않은 차이(브라우저와 서버가 같음, PEN-9 예외 목록 후보):
+- 타입 선언은 `PathCommand.command`에 `'M'`, `'L'`, `'Q'` 같은 짧은 이름과 2차 곡선을 허용한다고 적지만, `commands` setter는 `move-to`, `line-to`, `curve-to`, `close-path`만 받는다.
+- `createBoolean`은 도형 하나로도 Boolean을 만든다. `setParentIndex(-1)`, 범위 밖 `insertChild` index는 오류 없이 끝으로 맞춘다.

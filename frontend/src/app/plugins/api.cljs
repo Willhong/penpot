@@ -365,6 +365,9 @@
           (some #(u/inside-component-copy? objects %) shape-objs)
           (u/not-valid plugin-id :ungroup "Cannot change the structure of a component copy")
 
+          (some #(not (or (cfh/group-shape? %) (cfh/bool-shape? %) (cfh/frame-shape? %))) shape-objs)
+          (u/not-valid plugin-id :ungroup "Only groups, booleans and boards can be ungrouped")
+
           :else
           (st/emit! (dwg/ungroup-shapes ids)))))
 

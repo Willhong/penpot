@@ -410,3 +410,44 @@
         (t/is (= 1 (count @errors)))
         (t/is (= [plugin-id :combineAsVariants "Plugin doesn't have 'content:write' permission"]
                  (first @errors)))))))
+
+(defn- throwing-context
+  "A plugin context on a fresh store whose validation errors throw."
+  []
+  (let [store (ths/setup-store (cthf/sample-file :file1 :page-label :page1))]
+    (set! st/state store)
+    (st/emit! #(assoc-in % [:plugins :flags plugin-id :throw-validation-errors] true))
+    {:store store :context (api/create-context plugin-id)}))
+
+(t/deftest moving-a-shape-into-itself-or-its-children-is-refused
+  ;; Regression: the move was dropped without an error, so the caller could
+  ;; not tell it had no effect.
+  (thw/with-wasm-mocks*
+    (fn []
+      (let [{:keys [store ^js context]} (throwing-context)
+            ^js outer  (.createBoard context)
+            ^js nested (.createBoard context)]
+        (.appendChild outer nested)
+        (t/is (thrown? js/Error (.appendChild outer outer)) "into itself")
+        (t/is (thrown? js/Error (.appendChild nested outer)) "into its child")
+        (t/is (thrown? js/Error (.insertChild nested 0 outer)) "inserted into its child")
+        (t/is (= [(aget nested "$id")] (child-shapes store context outer))
+              "the tree is unchanged")))))
+
+(t/deftest path-data-with-nothing-readable-is-refused
+  ;; Regression: the parser dropped what it could not read, so such a string
+  ;; emptied the path without an error.
+  (thw/with-wasm-mocks*
+    (fn []
+      (let [{:keys [^js context]} (throwing-context)
+            ^js path (.createPath context)]
+        (set! (.-d path) "M 0 0 L 10 10")
+        (t/is (thrown? js/Error (set! (.-d path) "this is not a path")))
+        (t/is (= "M0,0L10,10" (.-d path)) "the content is kept")))))
+
+(t/deftest ungrouping-a-shape-that-is-not-a-container-is-refused
+  (thw/with-wasm-mocks*
+    (fn []
+      (let [{:keys [^js context]} (throwing-context)
+            ^js rect (.createRectangle context)]
+        (t/is (thrown? js/Error (.ungroup context rect)))))))
