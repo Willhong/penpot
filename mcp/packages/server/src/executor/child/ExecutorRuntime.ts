@@ -52,7 +52,9 @@ export class ExecutorRuntime {
      */
     async init(token: string, sharedKey: string | null): Promise<ExecutorStatus> {
         this.engine = await HeadlessEngine.boot(this.config.bundlePath, this.config.wasmDir, token, sharedKey);
-        this.api = createServerPluginApi(createServerContext(this.engine.context()));
+        this.api = createServerPluginApi(
+            createServerContext(this.engine.context(), () => this.engine.observedScreen())
+        );
         // PenpotUtils refers to the `penpot` global of its own realm
         (globalThis as any).penpot = this.api.penpot;
         (globalThis as any).penpotMgmt = this.api.penpotMgmt;
@@ -134,7 +136,6 @@ export class ExecutorRuntime {
             throw this.executionError(error);
         } finally {
             [flags.naturalChildOrdering, flags.throwValidationErrors] = previousFlags;
-            this.api.reset();
         }
 
         if (this.cancelRequested) {

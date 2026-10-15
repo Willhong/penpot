@@ -10,6 +10,7 @@ export class ConfigurationLoader {
     private readonly baseDir: string;
     private readonly initialInstructions: string;
     private readonly baseInstructions: string;
+    private readonly serverExecutionInstructions: string;
 
     /**
      * Creates a new configuration loader instance.
@@ -20,6 +21,9 @@ export class ConfigurationLoader {
         this.baseDir = baseDir;
         this.initialInstructions = this.loadFileContent(join(this.baseDir, "data", "initial_instructions.md"));
         this.baseInstructions = this.loadFileContent(join(this.baseDir, "data", "base_instructions.md"));
+        this.serverExecutionInstructions = this.loadFileContent(
+            join(this.baseDir, "data", "server_execution_instructions.md")
+        );
     }
 
     private loadFileContent(filePath: string): string {
@@ -37,6 +41,14 @@ export class ConfigurationLoader {
      */
     public getInitialInstructions(): string {
         return this.initialInstructions;
+    }
+
+    /**
+     * Gets the 'Server-Side Execution' section of the overview, for connections that run code in the server-side
+     * executor
+     */
+    public getServerExecutionInstructions(): string {
+        return this.serverExecutionInstructions;
     }
 
     /**

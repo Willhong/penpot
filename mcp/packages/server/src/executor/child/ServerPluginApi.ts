@@ -30,12 +30,13 @@ const MCP_PLUGIN_MANIFEST = {
  * Server counterpart of the plugins runtime's plugin manager (`createPluginManager`): the object `createApi`
  * builds the API on. There is no plugin window, so every window operation is `ui-only` (D8 (c)); events go
  * to the frontend context like in the browser.
+ *
+ * The browser plugin's listeners stay until the plugin closes; here they stay until the executor session
+ * ends, so a listener added in one execution also hears the changes other sessions save between executions.
  */
 class ServerPluginManager {
     readonly timeouts = new Set<ReturnType<typeof setTimeout>>();
     readonly intervals = new Set<ReturnType<typeof setInterval>>();
-    private readonly listeners = new Set<symbol>();
-
     constructor(public readonly context: any) {}
 
     get manifest() {
@@ -71,26 +72,11 @@ class ServerPluginManager {
     }
 
     registerListener(type: string, callback: (...params: unknown[]) => void, props?: unknown): symbol {
-        const id = this.context.addListener(type, callback, props);
-        this.listeners.add(id);
-        return id;
+        return this.context.addListener(type, callback, props);
     }
 
     destroyListener(listenerId: symbol): void {
         this.context.removeListener(listenerId);
-        this.listeners.delete(listenerId);
-    }
-
-    /**
-     * Removes the event listeners and timers an execution left behind.
-     */
-    reset(): void {
-        this.listeners.forEach((id) => this.context.removeListener(id));
-        this.listeners.clear();
-        this.timeouts.forEach(clearTimeout);
-        this.timeouts.clear();
-        this.intervals.forEach(clearInterval);
-        this.intervals.clear();
     }
 }
 
@@ -100,8 +86,6 @@ class ServerPluginManager {
 export interface ServerPluginApi {
     penpot: any;
     penpotMgmt: any;
-    /** removes the event listeners and timers an execution left behind */
-    reset(): void;
 }
 
 /**
@@ -123,5 +107,5 @@ export function createServerPluginApi(context: any): ServerPluginApi {
         onMessage: () => uiOnly("ui.onMessage()", "there is no plugin window"),
     });
     Object.defineProperty(api.penpot, "ui", { get: () => ui, enumerable: true });
-    return { penpot: api.penpot, penpotMgmt: api.penpotMgmt, reset: () => manager.reset() };
+    return { penpot: api.penpot, penpotMgmt: api.penpotMgmt };
 }

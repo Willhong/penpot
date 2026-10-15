@@ -4,6 +4,7 @@ import "reflect-metadata";
 import type { ToolResponse } from "../ToolResponse";
 import { TextResponse } from "../ToolResponse";
 import { PenpotMcpServer } from "../PenpotMcpServer";
+import { ServerExecutionGuide } from "../ServerExecutionGuide";
 import { ApiDocs } from "../ApiDocs";
 
 /**
@@ -70,19 +71,23 @@ export class PenpotApiInfoTool extends Tool<PenpotApiInfoArgs> {
             if (!memberDoc) {
                 throw new Error(`Member "${args.member}" not found in type "${args.type}"`);
             }
-            return new TextResponse(memberDoc);
+            const note = this.serverExecution() ? ServerExecutionGuide.memberNote(args.type, args.member) : null;
+            return new TextResponse(note ? `${memberDoc}\n\n${note}` : memberDoc);
         } else {
             // return full text or overview based on length
             const fullText = apiType.getFullText();
-            if (fullText.length <= PenpotApiInfoTool.MAX_FULL_TEXT_CHARS) {
-                return new TextResponse(fullText);
-            } else {
-                return new TextResponse(
-                    apiType.getOverviewText() +
-                        "\n\nMember details not provided (too long). " +
-                        "Call this tool with a member name for more information."
-                );
-            }
+            const text =
+                fullText.length <= PenpotApiInfoTool.MAX_FULL_TEXT_CHARS
+                    ? fullText
+                    : apiType.getOverviewText() +
+                      "\n\nMember details not provided (too long). " +
+                      "Call this tool with a member name for more information.";
+            const notes = this.serverExecution() ? ServerExecutionGuide.typeNotes(args.type) : null;
+            return new TextResponse(notes ? `${text}\n\nServer-side execution differences:\n${notes}` : text);
         }
+    }
+
+    private serverExecution(): boolean {
+        return this.mcpServer.usesServerExecution();
     }
 }

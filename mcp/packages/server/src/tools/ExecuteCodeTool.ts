@@ -119,8 +119,11 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
         "Everything one call changes is saved together when the code returns; if the code throws, nothing is saved. " +
         "The response has `result`, `log`, `commit` (saved revn, changed shape ids, whether layout and text values " +
         "were completed) and `engine`.\n" +
-        "Members that need a browser window (`penpot.ui`, `penpot.viewport`, `openViewer()`, " +
-        "`openPage(page, true)`, `closePlugin()`) fail with the error code `ui-only`.";
+        "`penpot.viewport` and `penpot.theme` read the screen of a browser tab where the same user has the file " +
+        "open; without one, reading the viewport fails with the error code `ui-only` and the theme is 'light'. " +
+        "Members that need a browser window (`penpot.ui`, moving the viewport, `openViewer()`, " +
+        "`openPage(page, true)`, `closePlugin()`) fail with `ui-only`. " +
+        "Listeners added with `penpot.on` stay until the session ends.";
 
     protected async executeCore(args: ExecuteCodeArgs, signal?: AbortSignal): Promise<ToolResponse> {
         const pool = this.mcpServer.executorPool;

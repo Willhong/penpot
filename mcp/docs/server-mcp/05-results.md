@@ -89,3 +89,23 @@ editor가 MCP token과 `?executor=server`로 `execute_code`를 부른다. 브라
 
 조사했지만 고치지 않은 것(결손을 재현하지 못함):
 - backend `update-file`은 트랜잭션 안에서 알림을 먼저 보낸다(`files_update.clj` `send-notifications!`). 그 뒤 커밋이 실패하면 저장되지 않은 변경이 열린 화면에 나갈 수 있다. 커밋 실패를 일으키는 경로를 찾지 못했다. 고친다면 커밋 뒤에 알림을 보내야 한다.
+
+## PEN-10 실행 컨텍스트 마무리 (2026-10-15, `experiments/pen10_context.py`)
+
+AI는 editor의 MCP 호출, 탭 p2는 같은 editor의 브라우저, 탭 p1은 owner(다른 사용자)다.
+
+| 확인 | 결과 |
+|---|---|
+| 같은 사용자의 탭이 없을 때 | `viewport` 읽기·쓰기 `ui-only`, `theme`는 `"light"` |
+| p2에서 배율·중심을 바꾼 뒤 AI가 `viewport` 읽기 | p2의 `zoom`·`center`·`bounds`와 같음(0.01초 안). p1(다른 사용자)의 배율 0.5는 쓰지 않음. 포인터를 움직이지 않아도 반영 |
+| `theme` | p2의 `penpot.theme`와 같음(`dark`) |
+| p2가 화면을 정한 뒤 새 세션이 파일을 엶 | 두 번째 읽기(0.5초 뒤)부터 p2의 화면. 첫 읽기는 탭이 알리기 전이라 `ui-only`이며 메시지가 그 사정을 말한다 |
+| 화면 쓰기(`zoom = 3`, `zoomToFitAll`) | `ui-only`("AI follow" 탭 없음) |
+| owner 탭이 보는 presence | editor의 브라우저 탭은 화면을 알리고, 실행기 세션은 알리지 않음 |
+| `penpot.on` (shapechange·selectionchange·contentsave) | 실행이 끝난 뒤에도 유지. 자기 변경(`a.x = 10`, 선택, 저장)과 p1이 저장한 변경(`a.x = 321`)을 모두 들음. `penpot.off` 뒤에는 듣지 않음 |
+| `openViewer`, `ui.open`, `closePlugin`, `zoomToFitAll` | 모두 `ui-only` |
+| `high_level_overview`·`penpot_api_info` | 서버 연결은 서버 실행 절과 member 설명을 받고, 플러그인 연결은 예전 그대로 |
+
+고친 결손:
+- 실행기가 실행이 끝날 때 `penpot.on` listener를 지워서, 다른 사람이 저장한 변경을 들을 수 없었다(계약은 `:file-change`로 만든 이벤트). 브라우저 플러그인처럼 세션 동안 남긴다.
+- 브라우저 탭은 포인터를 움직일 때만 화면을 알렸다. 단축키 확대·스크롤처럼 포인터 없이 바뀐 화면과, 나중에 들어온 세션은 그 탭의 화면을 몰랐다.

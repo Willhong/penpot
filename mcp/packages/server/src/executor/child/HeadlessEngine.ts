@@ -2,6 +2,20 @@ import { pathToFileURL } from "node:url";
 import type { CommitReport } from "../ExecutorProtocol";
 
 /**
+ * Screen of a browser tab of the same user on the open file, from its pointer updates (D8 (b)).
+ */
+export interface ObservedScreen {
+    pageId: string | null;
+    zoom: number;
+    /** visible area of the page, in page coordinates */
+    vbox: { x: number; y: number; width: number; height: number };
+    /** the tab's effective UI theme */
+    theme: string | null;
+    /** when the tab reported it, in ms since the epoch */
+    updatedAt: number | null;
+}
+
+/**
  * Exports of the frontend `:executor` build (`frontend/src/app/executor/api.cljs`).
  */
 interface ExecutorBundle {
@@ -18,6 +32,7 @@ interface ExecutorBundle {
         frontendVersion: string | null;
     };
     openFile(fileId: string, pageId: string | null): Promise<unknown>;
+    observedScreen(): ObservedScreen | null;
     beginExecution(options: { ifUnchangedSinceRevn?: number }): void;
     finishExecution(options: { settleTimeout: number }): Promise<CommitReport>;
     abortExecution(): Promise<void>;
@@ -64,6 +79,13 @@ export class HeadlessEngine {
 
     status(): ReturnType<ExecutorBundle["status"]> {
         return this.bundle.status();
+    }
+
+    /**
+     * Screen of a browser tab of the same user on the open file, or null when no such tab reported one.
+     */
+    observedScreen(): ObservedScreen | null {
+        return this.bundle.observedScreen() ?? null;
     }
 
     async openFile(fileId: string, pageId?: string): Promise<void> {

@@ -116,6 +116,32 @@
          :revn (some-> file-id file-revn)
          :frontendVersion (:full cf/version)}))
 
+(defn ^:export observedScreen
+  "Screen of a browser tab of the same user on the open file, as its
+  pointer updates report it (D8 (b)): `{pageId, zoom, vbox, theme,
+  updatedAt}` of the tab on the current page that reported last, else of
+  any tab of the user on the file; null when there is none."
+  []
+  (let [state      @st/state
+        profile-id (:profile-id state)
+        own        (:session-id state)
+        page-id    (:current-page-id state)
+        tabs       (->> (:workspace-presence state)
+                        (keep (fn [[session-id presence]]
+                                (when (and (not= own session-id)
+                                           (= profile-id (:profile-id presence))
+                                           (some? (:vbox presence)))
+                                  presence)))
+                        (sort-by #(some-> % :updated-at inst-ms)))
+        tab        (or (->> tabs (filter #(= page-id (:page-id %))) last)
+                       (last tabs))]
+    (when-let [{:keys [vbox zoom theme updated-at] :as tab} tab]
+      #js {:pageId (some-> (:page-id tab) str)
+           :zoom zoom
+           :vbox #js {:x (:x vbox) :y (:y vbox) :width (:width vbox) :height (:height vbox)}
+           :theme theme
+           :updatedAt (some-> updated-at inst-ms)})))
+
 (defn ^:export openFile
   "Opens a file as `penpotMgmt.openFile` would. Resolves to the status."
   [file-id page-id]

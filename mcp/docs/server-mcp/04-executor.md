@@ -67,6 +67,7 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | `boot({token, sharedKey, wasmDir})` | render-wasm headless 부팅, 인증 설정, 프로필 읽기, router·persistence 시작 |
 | `context()` | MCP 플러그인 id로 만든 plugin context (plugins-runtime이 받는 것과 같다) |
 | `openFile(fileId, pageId?)` | `penpotMgmt.openFile`과 같은 경로로 연다 |
+| `observedScreen()` | 같은 사용자가 이 파일을 연 브라우저 탭의 화면(`pageId`, `zoom`, `vbox`, `theme`). 없으면 null (D8 (b)) |
 | `beginExecution()` | 자동 저장을 멈추고(`dps/autosave-held?`) 바뀐 도형 id 기록을 시작한다 |
 | `finishExecution({settleTimeout})` | 레이아웃·텍스트 작업이 끝나길 기다리고, 위치 데이터를 바로 계산해 한 번의 `update-file`로 저장한다. `CommitReport`를 돌려준다 |
 | `abortExecution()` | 쌓인 변경을 버리고(`::dps/discard-buffered`) 파일을 다시 읽는다 |
@@ -139,9 +140,15 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | `openViewer()`, `openPage(page, true)` | `ui-only` | — |
 | `openPage(page)` | 세션의 현재 페이지를 바꾼다 | 따라가기 탭 이동은 PEN-24 |
 | `selection` | 세션 상태(frontend store) | 따라가기 탭 표시는 PEN-24 |
-| `viewport` 읽기·쓰기 | `ui-only` | 같은 사용자의 열린 브라우저 관찰(b), 따라가기(f)는 PEN-24 |
-| `theme` | `"light"` | 열린 브라우저 관찰(b)은 PEN-24 |
+| `viewport` 읽기 | 같은 사용자가 이 파일을 연 브라우저 탭의 화면(b). 없으면 `ui-only` | — |
+| `viewport` 쓰기, `zoomReset/zoomToFitAll/zoomIntoView` | `ui-only` | 따라가기(f)는 PEN-24 |
+| `theme` | 같은 탭의 테마(b). 없으면 `"light"` | — |
+| `penpot.on` 이벤트 | 세션이 끝날 때까지 유지(브라우저 플러그인은 닫힐 때까지). 세션의 변경과 다른 사람이 저장한 변경을 모두 듣는다 | — |
 | `localStorage` | 세션 동안 남는 메모리 저장소 | — |
+
+브라우저 탭의 화면은 기존 presence 메시지(`:pointer-update`)로 받는다. 탭은 포인터를 움직일 때 말고도 화면 위치·배율·테마가 바뀔 때와 다른 세션이 파일에 들어올 때 그 메시지를 보낸다. 실행기는 화면이 없으므로 보내지 않는다. 같은 사용자의 탭이 여럿이면 세션의 현재 페이지를 보는 탭 중 마지막으로 알린 탭을 쓴다.
+
+AI 클라이언트 안내: 서버 실행 연결에서는 `high_level_overview`가 플러그인 연결 전제를 빼고 'Server-Side Execution' 절(`data/server_execution_instructions.md`)을 붙인다. `penpot_api_info`는 서버에서 의미가 다른 member(`ServerExecutionGuide.ts`)에 설명을 덧붙인다.
 
 ## 8. 사용 방법
 

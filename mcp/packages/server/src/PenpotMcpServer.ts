@@ -24,6 +24,7 @@ import { ReplServer } from "./ReplServer";
 import { ApiDocs } from "./ApiDocs";
 import { ExecutorConfig } from "./executor/ExecutorConfig";
 import { ExecutorPool } from "./executor/ExecutorPool";
+import { ServerExecutionGuide } from "./ServerExecutionGuide";
 
 /**
  * Session context for request-scoped data.
@@ -128,6 +129,8 @@ export class PenpotMcpServer {
     private readonly replServer: ReplServer | null;
     private apiDocs: ApiDocs;
     private readonly penpotHighLevelOverview: string;
+    /** the overview for connections that run code in the server-side executor */
+    private readonly serverHighLevelOverview: string;
     private readonly connectionInstructions: string;
 
     /**
@@ -178,6 +181,9 @@ export class PenpotMcpServer {
         let instructions = this.configLoader.getInitialInstructions();
         instructions = instructions.replace("$api_types", this.apiDocs.getTypeNames().join(", "));
         this.penpotHighLevelOverview = instructions;
+        this.serverHighLevelOverview = this.executorPool
+            ? ServerExecutionGuide.overview(instructions, this.configLoader.getServerExecutionInstructions())
+            : instructions;
         this.connectionInstructions = this.configLoader.getBaseInstructions();
 
         this.tools = this.initTools();
@@ -254,10 +260,18 @@ export class PenpotMcpServer {
     }
 
     /**
-     * Retrieves the high-level overview instructions explaining core Penpot usage.
+     * Retrieves the high-level overview instructions explaining core Penpot usage, for the execution path of
+     * the current request.
      */
     public getHighLevelOverviewInstructions(): string {
-        return this.penpotHighLevelOverview;
+        return this.usesServerExecution() ? this.serverHighLevelOverview : this.penpotHighLevelOverview;
+    }
+
+    /**
+     * Whether the current request runs `execute_code` in the server-side executor.
+     */
+    public usesServerExecution(): boolean {
+        return this.executorPool !== null && this.getSessionContext()?.serverExecution === true;
     }
 
     /**

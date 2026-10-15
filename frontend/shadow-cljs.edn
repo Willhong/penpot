@@ -177,6 +177,7 @@
                          context          app.executor.api/context
                          status           app.executor.api/status
                          openFile         app.executor.api/openFile
+                         observedScreen   app.executor.api/observedScreen
                          beginExecution   app.executor.api/beginExecution
                          finishExecution  app.executor.api/finishExecution
                          abortExecution   app.executor.api/abortExecution}

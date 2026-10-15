@@ -1,4 +1,5 @@
 import { ExecutorError } from "../ExecutorError";
+import type { ObservedScreen } from "./HeadlessEngine";
 
 /**
  * Raises the `ui-only` error of D8 for a member that needs a browser window.
@@ -11,30 +12,40 @@ export function uiOnly(member: string, reason: string): never {
 }
 
 /**
- * Viewport of the server session. With no observed browser and no "AI follow" tab (PEN-24), reading or moving
- * the viewport has no meaning on the server (D8 (b)/(f) fall back to (c)).
+ * Viewport of the server session (D8). Reading it reads the screen of a browser tab of the same user on the
+ * open file (b); moving it needs a tab with "AI follow" on (f, PEN-24). Without such a tab both fail with
+ * `ui-only` (c).
+ *
+ * @param observe - the screen of the user's browser tab, or null when none reported one
  */
-function createViewport(): object {
-    const reason = "no browser tab of this user is open with 'AI follow' on";
+function createViewport(observe: () => ObservedScreen | null): object {
+    // a tab with the file open reports its screen within a moment after this session opens the file
+    const noTab =
+        "no browser tab of this user has reported its screen on this file (a tab that has the file open " +
+        "reports it within a second after this session opens the file)";
+    const noFollow = "no browser tab of this user has 'AI follow' on";
+    const screen = (member: string): ObservedScreen => observe() ?? uiOnly(member, noTab);
     return Object.freeze({
         get center() {
-            return uiOnly("Viewport.center", reason);
+            const { vbox } = screen("Viewport.center");
+            return Object.freeze({ x: vbox.x + vbox.width / 2, y: vbox.y + vbox.height / 2 });
         },
         set center(_value: unknown) {
-            uiOnly("Viewport.center", reason);
+            uiOnly("Viewport.center", noFollow);
         },
         get zoom() {
-            return uiOnly("Viewport.zoom", reason);
+            return screen("Viewport.zoom").zoom;
         },
         set zoom(_value: unknown) {
-            uiOnly("Viewport.zoom", reason);
+            uiOnly("Viewport.zoom", noFollow);
         },
         get bounds() {
-            return uiOnly("Viewport.bounds", reason);
+            const { vbox } = screen("Viewport.bounds");
+            return Object.freeze({ x: vbox.x, y: vbox.y, width: vbox.width, height: vbox.height });
         },
-        zoomReset: () => uiOnly("Viewport.zoomReset", reason),
-        zoomToFitAll: () => uiOnly("Viewport.zoomToFitAll", reason),
-        zoomIntoView: () => uiOnly("Viewport.zoomIntoView", reason),
+        zoomReset: () => uiOnly("Viewport.zoomReset", noFollow),
+        zoomToFitAll: () => uiOnly("Viewport.zoomToFitAll", noFollow),
+        zoomIntoView: () => uiOnly("Viewport.zoomIntoView", noFollow),
     });
 }
 
@@ -42,22 +53,23 @@ function createViewport(): object {
  * Wraps the frontend plugin context for the server (D8): members tied to the browser window answer with
  * the contract's server meaning instead of acting on a window that does not exist.
  *
- * - `viewport`: `ui-only` (no observed browser yet; PEN-24 adds the followed tab)
- * - `theme`: `"light"`, the fixed server value
+ * - `viewport`: read from the user's browser tab on the file, see {@link createViewport}
+ * - `theme`: the theme of the user's browser tab on the file, else `"light"`
  * - `openViewer()`: `ui-only`, it leaves the editor
  * - `openPage(page, true)`: `ui-only`, it opens a new window; `openPage(page)` changes the session's page
  *
  * @param context - the frontend plugin context of the headless workspace
+ * @param observe - the screen of the user's browser tab on the open file, or null when none reported one
  */
-export function createServerContext(context: any): any {
-    const viewport = createViewport();
+export function createServerContext(context: any, observe: () => ObservedScreen | null): any {
+    const viewport = createViewport(observe);
     return new Proxy(context, {
         get(target, prop, receiver) {
             switch (prop) {
                 case "viewport":
                     return viewport;
                 case "theme":
-                    return "light";
+                    return observe()?.theme ?? "light";
                 case "openViewer":
                     return () => uiOnly("openViewer()", "it leaves the editor for the viewer");
                 case "openPage":

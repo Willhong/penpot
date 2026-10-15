@@ -30,6 +30,7 @@
    [app.util.mouse :as mse]
    [app.util.object :as obj]
    [app.util.rxops :as rxs]
+   [app.util.theme :as theme]
    [beicon.v2.core :as rx]
    [clojure.set :as set]
    [potok.v2.core :as ptk]))
@@ -44,6 +45,7 @@
 (declare handle-file-restored)
 (declare handle-library-change)
 (declare handle-pointer-send)
+(declare handle-viewport-send)
 (declare handle-export-update)
 (declare fetch-missed-changes)
 
@@ -55,6 +57,9 @@
       (let [stopper     (rx/filter (ptk/type? ::finalize) stream)
             profile-id (:profile-id state)
             organization-id (dm/get-in state [:teams team-id :organization :id])
+            ;; last pointer position and last viewport sent to the others
+            last-point (atom nil)
+            last-sent  (atom nil)
 
             initmsg    [{:type :subscribe-file
                          :file-id file-id
@@ -106,8 +111,26 @@
                              (->> stream
                                   (rx/filter mse/pointer-event?)
                                   (rx/filter #(= :viewport (mse/get-pointer-source %)))
+                                  (rx/tap #(reset! last-point (:pt %)))
                                   (rx/pipe (rxs/throttle 50))
-                                  (rx/map #(handle-pointer-send file-id (:pt %)))))
+                                  (rx/map #(handle-pointer-send file-id (:pt %) last-sent)))
+
+                             ;; Send the viewport too when it changes without a pointer
+                             ;; move (zoom shortcuts, scrolling), and to a session that
+                             ;; joins the file: the MCP executor of the same user reads it
+                             ;; (D8 (b) of mcp/docs/server-mcp/01-feature-contract.md).
+                             (->> stream
+                                  (rx/filter (complement mse/pointer-event?))
+                                  (rx/filter (complement (ptk/type? ::handle-viewport-send)))
+                                  (rx/pipe (rxs/throttle 250))
+                                  (rx/map #(handle-viewport-send file-id @last-point last-sent false)))
+
+                             (->> stream
+                                  (rx/filter (ptk/type? ::dws/message))
+                                  (rx/map deref)
+                                  (rx/filter #(and (= :join-file (:type %))
+                                                   (= file-id (:file-id %))))
+                                  (rx/map #(handle-viewport-send file-id @last-point last-sent true))))
 
                             (rx/take-until stopper))]
 
@@ -151,23 +174,48 @@
     :organization-change-sso (dc/handle-organization-change-sso msg)
     nil))
 
+(defn- pointer-message
+  [state file-id point]
+  (let [local (:workspace-local state)]
+    {:type :pointer-update
+     :file-id file-id
+     :page-id (:current-page-id state)
+     :zoom (:zoom local)
+     :zoom-inverse (:zoom-inverse local)
+     :vbox (:vbox local)
+     :vport (:vport local)
+     :theme (theme/resolve-theme (dm/get-in state [:profile :theme])
+                                 (theme/get-system-theme))
+     :position point}))
+
+(defn- viewport-of
+  [message]
+  (select-keys message [:page-id :zoom :vbox :theme]))
+
 (defn- handle-pointer-send
-  [file-id point]
+  [file-id point last-sent]
   (ptk/reify ::handle-pointer-send
     ptk/WatchEvent
     (watch [_ state _]
-      (let [page-id (:current-page-id state)
-            local   (:workspace-local state)
-
-            message {:type :pointer-update
-                     :file-id file-id
-                     :page-id page-id
-                     :zoom (:zoom local)
-                     :zoom-inverse (:zoom-inverse local)
-                     :vbox (:vbox local)
-                     :vport (:vport local)
-                     :position point}]
+      (let [message (pointer-message state file-id point)]
+        (reset! last-sent (viewport-of message))
         (rx/of (dws/send message))))))
+
+(defn- handle-viewport-send
+  "Sends the pointer update message when the viewport changed since the
+  last one sent, or always when `force?`. Nothing while there is no
+  viewport (a session without a screen)."
+  [file-id point last-sent force?]
+  (ptk/reify ::handle-viewport-send
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [message  (pointer-message state file-id point)
+            viewport (viewport-of message)]
+        (if (and (some? (:vbox message))
+                 (or force? (not= viewport @last-sent)))
+          (do (reset! last-sent viewport)
+              (rx/of (dws/send message)))
+          (rx/empty))))))
 
 ;; --- Finalize Websocket
 
@@ -228,7 +276,7 @@
 
 
 (defn handle-pointer-update
-  [{:keys [page-id session-id position zoom zoom-inverse vbox vport] :as msg}]
+  [{:keys [page-id session-id position zoom zoom-inverse vbox vport theme] :as msg}]
   (ptk/reify ::handle-pointer-update
     ptk/UpdateEvent
     (update [_ state]
@@ -239,6 +287,7 @@
                           :zoom-inverse zoom-inverse
                           :vbox vbox
                           :vport vport
+                          :theme theme
                           :point position
                           :updated-at (ct/now)
                           :page-id page-id))))))
