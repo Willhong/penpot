@@ -12,10 +12,9 @@
 #   on both sides: PNG against the browser's CPU raster (03 §6, D15); PDF
 #   drawn to pixels by poppler against the same tolerance, with equal text.
 # - textExports: the card's SVG export and generated HTML/CSS must be equal
-#   once links and ids are normalized (03 §6). Also reports whether they are
-#   equal once @font-face rules are sorted and numbers are taken as equal
-#   within 0.01, the transform tolerance of 03 §6 (a user decision, not
-#   counted as passed).
+#   once links and ids are normalized, @font-face rules sorted and numbers
+#   taken as equal within 0.01 (03 §6, D17). Also reports whether they were
+#   equal as they are.
 # - pluginPath: the existing browser path still works: the editor's tab
 #   connects the MCP plugin from its MCP menu, `executor=plugin` runs in that
 #   tab and the browser saves; a server execution on the same file at the
@@ -61,7 +60,7 @@ import dual_run  # noqa: E402
 import mcp_client  # noqa: E402
 import mcpv  # noqa: E402
 import observers  # noqa: E402
-from pen19_exports import BROWSER_CPU, normalize_links, png, squash  # noqa: E402
+from pen19_exports import BROWSER_CPU, normalize_links, png, same_text, squash  # noqa: E402
 from pen6_consistency import restart_mcp  # noqa: E402
 
 OUT = mcpv.STATE / "pen9" / "integrated"
@@ -173,26 +172,6 @@ def canonical(rows):
 def row_diff(a, b):
     sa, sb = {json.dumps(r) for r in a}, {json.dumps(r) for r in b}
     return {"onlyTab": sorted(sa - sb)[:5], "onlyBackend": sorted(sb - sa)[:5]}
-
-
-def sorted_faces(text):
-    """The text with its @font-face rules in sorted order."""
-    faces = re.findall(r"@font-face\s*\{[^}]*\}", text)
-    rest = re.sub(r"@font-face\s*\{[^}]*\}", "\0", text)
-    for face in sorted(faces):
-        rest = rest.replace("\0", face, 1)
-    return rest
-
-
-NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
-
-
-def same_within(a, b, tolerance=0.01):
-    """Whether two texts are equal but for numbers that differ by at most `tolerance`."""
-    if NUMBER.split(a) != NUMBER.split(b):
-        return False
-    xs, ys = NUMBER.findall(a), NUMBER.findall(b)
-    return len(xs) == len(ys) and all(abs(float(x) - float(y)) <= tolerance for x, y in zip(xs, ys))
 
 
 def pdf_compare():
@@ -319,9 +298,8 @@ class Pen9:
         for key, get in (("svg", lambda x: base64.b64decode(x["svg"]).decode()), ("html", lambda x: x["html"]),
                          ("css", lambda x: x["css"])):
             a, b = squash(normalize_links(get(server))), squash(normalize_links(get(browser)))
-            out[key] = {"equal": a == b,
-                        "equalSortedFacesWithin001": same_within(sorted_faces(a), sorted_faces(b))}
-        self.report["textExports"] = {"ok": all(v["equal"] for v in out.values()), **out}
+            out[key] = {"ok": same_text(a, b), "exact": a == b}
+        self.report["textExports"] = {"ok": all(v["ok"] for v in out.values()), **out}
 
     def toggle_plugin(self, label):
         """Clicks the MCP plugin item of the tab's MCP menu (connect or disconnect); returns its label."""

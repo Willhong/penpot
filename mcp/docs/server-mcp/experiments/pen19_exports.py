@@ -9,8 +9,9 @@
 #   of the same shapes (the path the server takes, as the exporter does) and
 #   have the size of the browser's GPU export; the difference to the GPU
 #   export is reported as `renderer`. SVG and generated code must be equal
-#   once origins and media ids are normalized; PDF once the image colour
-#   space tag is.
+#   once origins and media ids are normalized, numbers within 0.01 and
+#   @font-face rules in any order (D17); PDF once the image colour space tag
+#   is.
 # - freshSession: a session that only opens the saved file exports the same
 #   pixels as the session that made it: the fonts of the texts, a fallback
 #   for Korean included, are loaded before the export draws (PEN-9).
@@ -141,6 +142,32 @@ def squash(text):
     return re.sub(r">\s+<", "><", re.sub(r"\s+", " ", text)).strip()
 
 
+def sorted_faces(text):
+    """The text with its @font-face rules in sorted order."""
+    faces = re.findall(r"@font-face\s*\{[^}]*\}", text)
+    rest = re.sub(r"@font-face\s*\{[^}]*\}", "\0", text)
+    for face in sorted(faces):
+        rest = rest.replace("\0", face, 1)
+    return rest
+
+
+NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def same_within(a, b, tolerance=0.01):
+    """Whether two texts are equal but for numbers that differ by at most `tolerance`."""
+    if NUMBER.split(a) != NUMBER.split(b):
+        return False
+    xs, ys = NUMBER.findall(a), NUMBER.findall(b)
+    return len(xs) == len(ys) and all(abs(float(x) - float(y)) <= tolerance for x, y in zip(xs, ys))
+
+
+def same_text(a, b):
+    """Whether two SVG or code strings are equal by 03 §6 (D17): numbers within 0.01, @font-face rules in any
+    order. The float residue of geometry (62.0000003 against 62.00000036) is not a difference."""
+    return same_within(sorted_faces(a), sorted_faces(b))
+
+
 def pdf_streams(data):
     """The decompressed streams of a PDF, without ICC profiles, with resource names numbered away."""
     out = []
@@ -201,7 +228,7 @@ class Pen19:
         svg_server = base64.b64decode(server["outputs"]["card.svg"]).decode()
         svg_browser = base64.b64decode(browser["outputs"]["card.svg"]).decode()
         links = sorted(set(re.findall(r"(?:href=\"|url\(\")(https?://[^/\"]+)", svg_server)))
-        svg = {"ok": normalize_links(svg_server) == normalize_links(svg_browser)
+        svg = {"ok": same_text(normalize_links(svg_server), normalize_links(svg_browser))
                      and links == [public], "serverLinkOrigins": links}
 
         (OUT / "server-card.pdf").write_bytes(base64.b64decode(server["outputs"]["card.pdf"]))
@@ -214,14 +241,15 @@ class Pen19:
         for key in server["code"]:
             a = normalize_links(server["code"][key])
             b = normalize_links(browser["code"][key])
-            code_out[key] = {"ok": squash(a) == squash(b), "length": [len(a), len(b)]}
+            code_out[key] = {"ok": same_text(squash(a), squash(b)), "length": [len(a), len(b)]}
         # Known difference (user decision, 03 §6): the server's SVG markup carries the @font-face rules of
         # its texts, with links on the public URI; the browser's leaves that <style> empty.
         faces = re.findall(r"@font-face\s*\{[^}]*\}", server["code"]["svg"])
         without_faces = normalize_links(re.sub(r"\s*@font-face\s*\{[^}]*\}", "", server["code"]["svg"]))
         face_links = sorted(set(re.findall(r"url\((https?://[^/)]+)", " ".join(faces))))
         code_out["svg"].update(
-            ok=squash(without_faces) == squash(normalize_links(browser["code"]["svg"])) and face_links == [public],
+            ok=same_text(squash(without_faces), squash(normalize_links(browser["code"]["svg"])))
+               and face_links == [public],
             serverFontFaces=len(faces), fontFaceOrigins=face_links)
         self.report["outputs"] = {
             "ok": all(r["ok"] for r in rasters.values()) and svg["ok"] and pdf["ok"]
