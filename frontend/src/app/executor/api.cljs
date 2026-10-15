@@ -14,7 +14,6 @@
   against `context()`, then `finishExecution` (settle derived values, save in
   one request) or `abortExecution` (save nothing, reload the file)."
   (:require
-   [app.common.data :as d]
    [app.common.time :as ct]
    [app.common.transit :as t]
    [app.common.uuid :as uuid]
@@ -28,8 +27,12 @@
    [app.main.data.workspace.pages :as dwpg]
    [app.main.store :as st]
    [app.plugins.api :as plugins.api]
+   [app.plugins.public-utils :as public-utils]
    [app.plugins.register :as preg]
+   ;; as `app.plugins` does in the browser
+   [app.plugins.wiring]
    [beicon.v2.core :as rx]
+   [cuerdas.core :as str]
    [potok.v2.core :as ptk]
    [promesa.core :as p]))
 
@@ -63,6 +66,7 @@
                    (or (#{:object-not-found :not-found :save-permission-denied} code)
                        (= type :not-found)) "not-found"
                    (= code :precondition-failed) "precondition-failed"
+                   (= code :settle-timeout) "resource-limit"
                    (= code :revn-conflict) "revn-conflict"
                    (= code :vern-conflict) "vern-conflict"
                    (= type :validation) "validation"
@@ -115,6 +119,12 @@
          :canEdit (boolean (get-in @st/state [:permissions :can-edit]))
          :revn (some-> file-id file-revn)
          :frontendVersion (:full cf/version)}))
+
+(defn ^:export centerShapes
+  "What `penpot.utils.geometry.center` returns; the plugins runtime reaches it
+  through `window.app`, which the executor does not have."
+  [shapes]
+  (public-utils/centerShapes shapes))
 
 (defn ^:export observedScreen
   "Screen of a browser tab of the same user on the open file, as its
@@ -210,6 +220,18 @@
                             (throw (ex-info "this user has read-only access to the file; its edits were not applied"
                                             {:type :not-found :code :object-not-found})))
                 pending   (session/settle! settle-timeout)
+                ;; 03-runtime-contract §3: an execution always completes its
+                ;; derived values; saving them half done would leave the rest
+                ;; to whichever browser opens the file next
+                _         (when (some? pending)
+                            (throw (ex-info (str "layout, text or component work did not finish within "
+                                                 settle-timeout " ms ("
+                                                 (->> pending
+                                                      (map (fn [[id kinds]] (str id " " (str/join "," (map name (keys kinds))))))
+                                                      (take 5)
+                                                      (str/join "; "))
+                                                 "); nothing was saved")
+                                            {:type :resource-limit :code :settle-timeout})))
                 ;; D4, checked again right before the save: another session's
                 ;; change may have arrived while the code ran
                 _         (let [{:keys [precondition file-id]} @execution
@@ -239,12 +261,9 @@
                :lagged (if (and (pos? saves) before)
                          (max 0 (- answered before (dec saves)))
                          0)
-               :computed #js {:layout (nil? pending)
-                              :text (nil? pending)
-                              :bool true
-                              :componentSync (nil? pending)}
-               :pending (when (some? pending)
-                          (clj->js (d/update-vals pending (comp vec keys))))})
+               ;; derived values always complete before a save (see above)
+               :computed #js {:layout true :text true :bool true :componentSync true}
+               :pending nil})
         (p/catch (fn [cause]
                    (end-execution!)
                    (p/rejected (contract-error cause)))))))

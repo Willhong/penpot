@@ -33,6 +33,7 @@ interface ExecutorBundle {
     };
     openFile(fileId: string, pageId: string | null): Promise<unknown>;
     observedScreen(): ObservedScreen | null;
+    centerShapes(shapes: unknown[]): { x: number; y: number } | null;
     beginExecution(options: { ifUnchangedSinceRevn?: number }): void;
     finishExecution(options: { settleTimeout: number }): Promise<CommitReport>;
     abortExecution(): Promise<void>;
@@ -79,6 +80,13 @@ export class HeadlessEngine {
 
     status(): ReturnType<ExecutorBundle["status"]> {
         return this.bundle.status();
+    }
+
+    /**
+     * Center of the shapes, as `penpot.utils.geometry.center` computes it.
+     */
+    centerShapes(shapes: unknown[]): { x: number; y: number } | null {
+        return this.bundle.centerShapes(shapes);
     }
 
     /**

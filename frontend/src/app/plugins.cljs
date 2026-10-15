@@ -12,14 +12,10 @@
    [app.main.features :as features]
    [app.main.store :as st]
    [app.plugins.api :as api]
-   [app.plugins.flex :as flex]
-   [app.plugins.format :as format]
-   [app.plugins.grid :as grid]
-   [app.plugins.library :as library]
    [app.plugins.public-utils]
    [app.plugins.register :as preg]
-   [app.plugins.ruler-guides :as rg]
-   [app.plugins.shape :as shape]
+   ;; connects the proxies that would otherwise require each other
+   [app.plugins.wiring]
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]))
 
@@ -43,13 +39,3 @@
            (rx/take 1)
            (rx/tap init-plugins-runtime)
            (rx/ignore)))))
-
-;; Prevent circular dependency
-(set! flex/shape-proxy? shape/shape-proxy?)
-(set! grid/shape-proxy? shape/shape-proxy?)
-(set! format/shape-proxy shape/shape-proxy)
-(set! rg/shape-proxy shape/shape-proxy)
-(set! rg/shape-proxy? shape/shape-proxy?)
-
-(set! shape/lib-typography-proxy? library/lib-typography-proxy?)
-(set! shape/lib-component-proxy library/lib-component-proxy)

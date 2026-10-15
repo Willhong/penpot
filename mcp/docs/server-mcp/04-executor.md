@@ -87,7 +87,7 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 ```
 
 - `revn`은 저장 뒤 backend의 revn이다. backend `update-file`은 저장 직전 revn을 돌려주고 frontend는 그 값을 그대로 둔다. 그래서 보고는 그 값 + 1이다.
-- `computed`가 false면 `pending`에 아직 끝나지 않은 작업을 도형 id별로 적는다(`settleTimeout` 초과).
+- 저장된 실행은 파생 값 계산을 모두 끝낸 것이다(`computed`가 모두 true, `pending`은 null). 계산이 `settleTimeout`(기본 10초) 안에 끝나지 않으면 저장하지 않고 `resource-limit`으로 실패하며, 메시지에 남은 작업을 도형 id별로 적는다(`03` §3, PEN-13).
 - 아무것도 바꾸지 않은 실행은 `commit`이 `null`이다.
 
 ### `execute_code` 도구 인자 (서버 실행일 때)

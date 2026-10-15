@@ -178,6 +178,7 @@
                          status           app.executor.api/status
                          openFile         app.executor.api/openFile
                          observedScreen   app.executor.api/observedScreen
+                         centerShapes     app.executor.api/centerShapes
                          beginExecution   app.executor.api/beginExecution
                          finishExecution  app.executor.api/finishExecution
                          abortExecution   app.executor.api/abortExecution}

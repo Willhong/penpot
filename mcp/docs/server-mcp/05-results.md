@@ -147,3 +147,19 @@ AI는 editor의 MCP 호출, 탭 p2는 같은 editor의 브라우저, 탭 p1은 o
 - **grow type이 자동에서 고정으로 바뀌는 크기 변경 뒤 `waitForLayoutUpdate`가 시간 초과됐다**(E4에서 찾은 결손). 대기 표시를 바뀌기 전 grow type으로 판단해 걸었는데 고정 텍스트는 다시 재지 않으므로 아무도 풀지 않았다. 바뀐 뒤 grow type으로 판단한다. `resize(w, h)`가 자동 높이 텍스트를 고정으로 바꾸는 것은 높이를 직접 정했기 때문이며 UI 규칙과 같다.
 
 참고(브라우저와 같음): `createText` 직후 텍스트는 너비 1에서 시작해 첫 측정(약 0.25초) 뒤 제 크기가 된다. 그 전에 grow type을 `auto-height`로 바꾸면 너비 1에 맞춰 줄바꿈한다. 먼저 `waitForLayoutUpdate`를 기다리면 된다.
+
+## PEN-13 Flex·Grid·중첩 레이아웃 (2026-10-15, `experiments/pen13_layouts.py`)
+
+| 확인 | 결과 |
+|---|---|
+| `pen13_layout.js`(dual run): flex(방향·wrap·정렬 4종·간격·개별 padding), 자식 fill/auto/fix·min/max·margin·align-self·absolute·z-index, 내용을 감싸는(hug) 3단 중첩 flex, grid(fixed·flex·percent·auto 트랙, row/column span, 셀 정렬), flex 안의 grid. 이어서 부모 크기 변경, 자식 추가·숨김·순서 변경·삭제, 트랙 삭제, 깊은 자식 크기 변경, 레이아웃 제거 | 10단계마다 `waitForLayoutUpdate`가 끝나고, 단계별 모든 도형의 좌표·크기가 브라우저와 같음. 저장된 도형 22개 같음. 관찰 탭에 새로고침 없이 반영 |
+| `pen13_refusals.js`(dual run): 잘못된 레이아웃 값 19가지 | 답과 남은 상태 같음 |
+| 브라우저 0개에서 실행 | 저장 뒤 브라우저를 열어도 revn 그대로, 저장값 그대로 |
+| 파생 값 계산이 제한 시간 안에 끝나지 않음(통합 시험, 제한 1ms로 강제) | `resource-limit`, 남은 작업을 도형 id별로 알림, 저장 없음. 같은 코드가 기본 제한에서는 저장됨 |
+
+고친 결손:
+- **flex·grid의 `appendChild`가 서버에서 실패했다.** 플러그인 proxy들은 서로를 브라우저 전용 `app.plugins` 네임스페이스가 로드될 때 연결하는데, 실행기는 그 네임스페이스(브라우저 플러그인 런타임을 불러옴)를 로드하지 않는다. 연결을 `app.plugins.wiring`으로 옮겨 양쪽이 로드한다. ruler guide, 라이브러리 타이포그래피·variant proxy 연결도 같이 해결된다.
+- **`penpot.utils.geometry.center`가 서버에서 `window is not defined`로 실패했다**(PEN-10 범위에서 놓침). 플러그인 런타임이 `window.app`으로 frontend 함수를 부르기 때문이다. 실행기가 그 함수를 직접 넘긴다.
+- **파생 값 계산이 10초 안에 끝나지 않으면 덜 끝난 채 저장했다**(`computed: false`). 계약 03 §3("실행이 끝날 때는 항상 파생 값 계산을 끝낸다")과 달리 나머지를 다음에 파일을 여는 브라우저에 떠넘긴다. 이제 저장하지 않고 `resource-limit`으로 실패한다.
+
+비교 도구(`dual_run.py`): grid 셀처럼 실행마다 새로 만든 id를 키로 쓰는 값은 키 대신 내용으로 비교한다.

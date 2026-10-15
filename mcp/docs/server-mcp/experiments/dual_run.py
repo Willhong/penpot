@@ -13,7 +13,9 @@ saved (03-runtime-contract §6).
   the result without a reload, and whether a reload shows the same.
 
 Shapes are matched by name, so scenarios name every shape they create. Ids
-are replaced by names before comparing; numbers are rounded to 2 decimals.
+are replaced by names before comparing; maps keyed by other generated ids
+(grid cells) are compared as lists of their entries; numbers are rounded to
+2 decimals.
 """
 
 import json
@@ -43,6 +45,10 @@ def normalize(value, names):
     if isinstance(value, list):
         return [normalize(v, names) for v in value]
     if isinstance(value, dict):
+        if value and all(UUID.match(k) and k not in names for k in value):
+            # keyed by ids generated on each side (e.g. grid cells): compare the entries, in a stable order
+            entries = [normalize(v, names) for v in value.values()]
+            return sorted(entries, key=lambda entry: json.dumps(entry, sort_keys=True))
         return {k: normalize(v, names) for k, v in sorted(value.items()) if k not in VOLATILE}
     return value
 

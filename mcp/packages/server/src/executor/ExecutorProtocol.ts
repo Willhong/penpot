@@ -50,8 +50,9 @@ export interface CommitReport {
     changedShapeIds: string[];
     /** number of changes of other sessions the backend applied in between */
     lagged: number;
+    /** always all true: an execution whose derived values do not finish fails with `resource-limit` instead */
     computed: { layout: boolean; text: boolean; bool: boolean; componentSync: boolean };
-    /** layout work still in flight when the settle timeout passed, by shape id */
+    /** always null, see `computed` */
     pending?: Record<string, string[]> | null;
     warnings?: { code: string; shapeId?: string; message?: string }[];
 }

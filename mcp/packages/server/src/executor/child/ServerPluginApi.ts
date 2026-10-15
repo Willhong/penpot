@@ -90,11 +90,13 @@ export interface ServerPluginApi {
 
 /**
  * Builds `penpot` and `penpotMgmt` over the server context with the plugins runtime's factory, then replaces
- * the plugin window API (`penpot.ui`), which has no server meaning (D8 (c)).
+ * the plugin window API (`penpot.ui`), which has no server meaning (D8 (c)), and the one utility the runtime
+ * reaches through the browser's `window.app`.
  *
  * @param context - the server context (see {@link createServerContext})
+ * @param centerShapes - the frontend's `centerShapes`, behind `penpot.utils.geometry.center`
  */
-export function createServerPluginApi(context: any): ServerPluginApi {
+export function createServerPluginApi(context: any, centerShapes: (shapes: unknown[]) => unknown): ServerPluginApi {
     const manager = new ServerPluginManager(context);
     const api = createApi(manager as any) as { penpot: any; penpotMgmt: any };
     const ui = Object.freeze({
@@ -107,5 +109,6 @@ export function createServerPluginApi(context: any): ServerPluginApi {
         onMessage: () => uiOnly("ui.onMessage()", "there is no plugin window"),
     });
     Object.defineProperty(api.penpot, "ui", { get: () => ui, enumerable: true });
+    api.penpot.utils.geometry.center = (shapes: unknown[]) => centerShapes(shapes);
     return { penpot: api.penpot, penpotMgmt: api.penpotMgmt };
 }

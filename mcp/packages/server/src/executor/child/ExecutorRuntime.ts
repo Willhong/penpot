@@ -35,6 +35,9 @@ export class ExecutorRuntime {
         "validation",
         "revn-conflict",
         "vern-conflict",
+        "precondition-failed",
+        // derived values that did not finish within the settle bound
+        "resource-limit",
     ]);
 
     private engine!: HeadlessEngine;
@@ -60,7 +63,8 @@ export class ExecutorRuntime {
     async init(token: string, sharedKey: string | null): Promise<ExecutorStatus> {
         this.engine = await HeadlessEngine.boot(this.config.bundlePath, this.config.wasmDir, token, sharedKey);
         this.api = createServerPluginApi(
-            createServerContext(this.engine.context(), () => this.engine.observedScreen())
+            createServerContext(this.engine.context(), () => this.engine.observedScreen()),
+            (shapes) => this.engine.centerShapes(shapes)
         );
         // PenpotUtils refers to the `penpot` global of its own realm
         (globalThis as any).penpot = this.api.penpot;

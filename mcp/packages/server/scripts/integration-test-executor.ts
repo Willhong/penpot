@@ -193,6 +193,27 @@ async function main(): Promise<void> {
         { loop, loopNext, revn: [loopBefore.revn, loopAfter.revn] }
     );
 
+    // derived values that do not finish within the settle bound: resource-limit, nothing saved
+    const settleBefore = await fileState(editorFile);
+    const layoutCode =
+        "const b = penpot.createBoard(); b.name = 'settle-board'; const f = b.addFlexLayout(); f.wrap = 'wrap';" +
+        " for (let i = 0; i < 200; i++) { const r = penpot.createRectangle(); r.name = 'settle-rect'; f.appendChild(r); }" +
+        " return 1;";
+    const unsettled = await outcome(() =>
+        pool.execute(token("editor"), "settle", { code: layoutCode, fileId: editorFile, settleTimeoutMs: 1 })
+    );
+    const settleAfter = await fileState(editorFile);
+    const settled = await outcome(() => pool.execute(token("editor"), "settle", { code: layoutCode }));
+    check(
+        "unsettledDerivedValues",
+        unsettled.code === "resource-limit" &&
+            (unsettled.message ?? "").includes("did not finish") &&
+            settleAfter.revn === settleBefore.revn &&
+            !settleAfter.names.includes("settle-board") &&
+            settled.ok,
+        { unsettled, settled, revn: [settleBefore.revn, settleAfter.revn] }
+    );
+
     // memory blow-up
     const memBefore = await fileState(editorFile);
     const memory = await outcome(() =>
