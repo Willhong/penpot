@@ -13,8 +13,9 @@
 #   drawn to pixels by poppler against the same tolerance, with equal text.
 # - textExports: the card's SVG export and generated HTML/CSS must be equal
 #   once links and ids are normalized (03 §6). Also reports whether they are
-#   equal once @font-face rules are sorted and numbers rounded to 2
-#   decimals, the shape map rule (a user decision, not counted as passed).
+#   equal once @font-face rules are sorted and numbers are taken as equal
+#   within 0.01, the transform tolerance of 03 §6 (a user decision, not
+#   counted as passed).
 # - pluginPath: the existing browser path still works: the editor's tab
 #   connects the MCP plugin from its MCP menu, `executor=plugin` runs in that
 #   tab and the browser saves; a server execution on the same file at the
@@ -179,9 +180,15 @@ def sorted_faces(text):
     return rest
 
 
-def rounded_numbers(text):
-    """The text with every number written with 2 decimals."""
-    return re.sub(r"-?\d+(?:\.\d+)?", lambda m: f"{round(float(m.group(0)), 2):.2f}", text)
+NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def same_within(a, b, tolerance=0.01):
+    """Whether two texts are equal but for numbers that differ by at most `tolerance`."""
+    if NUMBER.split(a) != NUMBER.split(b):
+        return False
+    xs, ys = NUMBER.findall(a), NUMBER.findall(b)
+    return len(xs) == len(ys) and all(abs(float(x) - float(y)) <= tolerance for x, y in zip(xs, ys))
 
 
 def pdf_compare():
@@ -309,7 +316,7 @@ class Pen9:
                          ("css", lambda x: x["css"])):
             a, b = squash(normalize_links(get(server))), squash(normalize_links(get(browser)))
             out[key] = {"equal": a == b,
-                        "equalSortedFacesRounded": rounded_numbers(sorted_faces(a)) == rounded_numbers(sorted_faces(b))}
+                        "equalSortedFacesWithin001": same_within(sorted_faces(a), sorted_faces(b))}
         self.report["textExports"] = {"ok": all(v["equal"] for v in out.values()), **out}
 
     def toggle_plugin(self, label):

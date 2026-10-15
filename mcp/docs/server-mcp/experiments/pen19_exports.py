@@ -175,6 +175,7 @@ class Pen19:
                                                                     ((x + y) * 17) % 256)))).decode()
         code = (HERE / "pen19_export.js").read_text().replace("__PNG_BASE64__", image)
         server_file, _ = mcpv.create_file("pen19-export-server")
+        self.outputs_file = server_file
         server = self.run(code, fileId=server_file, session=f"{self.session}-out")["result"]
         browser_file, browser_page = mcpv.create_file("pen19-export-browser")
         self.tabs.blank()
@@ -339,8 +340,10 @@ return await r.export({ type: 'png', scale: 1 });""" % json.dumps(media["id"])
 
     def export_shape(self):
         session = f"{self.session}-out"
+        # the file of `outputs`, opened again: a session closed to make room for later ones loses its file
         ids = self.run("const all = penpot.currentPage.findShapes(); "
-                       "return Object.fromEntries(all.map((s) => [s.name, s.id]));", session=session)["result"]
+                       "return Object.fromEntries(all.map((s) => [s.name, s.id]));", session=session,
+                       fileId=self.outputs_file)["result"]
         result = self.editor.call("tools/call", {"name": "export_shape", "arguments": {
             "shapeId": ids["card"], "format": "png", "sessionId": session}})
         image = [c for c in result["content"] if c["type"] == "image"]

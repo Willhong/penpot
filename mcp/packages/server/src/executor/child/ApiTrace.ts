@@ -61,6 +61,11 @@ export class ApiTrace {
             if (Array.isArray(value)) {
                 return value.map((item) => this.unwrap(item));
             }
+            // data user code builds, such as `{ destination: board }`, may hold API objects
+            const proto = Object.getPrototypeOf(value);
+            if (proto === Object.prototype || proto === null) {
+                return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.unwrap(item)]));
+            }
         }
         return value;
     }
@@ -79,7 +84,13 @@ export class ApiTrace {
     }
 
     private wrapValue(value: unknown, path: string): any {
-        if (value === null || typeof value !== "object" || value instanceof Promise) {
+        if (
+            value === null ||
+            typeof value !== "object" ||
+            value instanceof Promise ||
+            ArrayBuffer.isView(value) ||
+            value instanceof ArrayBuffer
+        ) {
             return value;
         }
         if (Array.isArray(value)) {

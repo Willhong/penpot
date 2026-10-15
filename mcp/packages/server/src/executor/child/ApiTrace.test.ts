@@ -25,6 +25,8 @@ function root(): any {
         currentPage: page,
         utils: Object.freeze({ geometry: Object.freeze({ center: (shapes: unknown[]) => shapes.length }) }),
         group: (shapes: unknown[]) => shapes.every((s) => s === a || s === b),
+        link: (action: { destination: unknown; also: unknown[] }) => action.destination === a && action.also[0] === b,
+        bytes: () => Uint8Array.from([1, 2, 3]),
         later: async () => shape("later"),
         a,
     });
@@ -75,6 +77,19 @@ describe("ApiTrace", () => {
         assert.equal(penpot.group([a, b]), true);
         assert.equal(a.isSame(penpot.a), true);
         assert.equal(penpot.a, a);
+    });
+
+    it("passes the API its own objects back from inside plain data", () => {
+        const { penpot } = traced();
+        const [a, b] = penpot.currentPage.children;
+        assert.equal(penpot.link({ destination: a, also: [b] }), true);
+    });
+
+    it("hands typed arrays out as they are", () => {
+        const { penpot } = traced();
+        const bytes = penpot.bytes();
+        assert.ok(bytes instanceof Uint8Array);
+        assert.deepEqual([...bytes], [1, 2, 3]);
     });
 
     it("reads frozen properties without breaking the proxy invariants", () => {

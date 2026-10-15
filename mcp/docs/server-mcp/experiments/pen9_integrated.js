@@ -21,7 +21,15 @@ const settle = async (label) => {
     await penpot.waitForLayoutUpdate(10000);
     waits.push([label, "ok"]);
   } catch (error) {
-    waits.push([label, String(error.message || error)]);
+    // in a browser, which layout work is still pending (diagnosis; the server has no `app`)
+    const pending = typeof app === "undefined" ? null : (() => {
+      const objects = app.main.data.helpers.lookup_page_objects(cljs.core.deref(app.main.store.state));
+      return cljs.core.into_array(cljs.core.map((e) => {
+        const o = cljs.core.get(objects, cljs.core.key(e));
+        return [o ? cljs.core.get(o, cljs.core.keyword("name")) : String(cljs.core.key(e)), cljs.core.pr_str(cljs.core.val(e))];
+      }, app.main.data.workspace.reflow.pending_shapes.getValue()));
+    })();
+    waits.push(pending ? [label, String(error.message || error), pending] : [label, String(error.message || error)]);
   }
 };
 const round = (n) => (typeof n === "number" ? Math.round(n * 100) / 100 : n);
