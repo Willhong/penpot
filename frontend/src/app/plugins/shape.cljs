@@ -68,10 +68,12 @@
    [app.plugins.text :as text]
    [app.plugins.tokens :refer [applied-tokens-plugin->applied-tokens expand-token-attrs token-attr-plugin->token-attr token-attr? valid-token-resolution?]]
    [app.plugins.utils :as u]
+   [app.render-wasm.api :as wasm.api]
    [app.util.http :as http]
    [app.util.object :as obj]
    [beicon.v2.core :as rx]
-   [cuerdas.core :as str]))
+   [cuerdas.core :as str]
+   [promesa.core :as p]))
 
 (declare shape-proxy)
 (declare shape-proxy?)
@@ -1628,23 +1630,28 @@
                        wasm-enabled? (features/active-feature? @st/state "render-wasm/v1")]
                    (if (and wasm-enabled?
                             (contains? #{:jpeg :webp :png :pdf :svg} export-type))
-                     ;; Render in the browser with render-wasm.
+                     ;; Render in the browser with render-wasm, once the images
+                     ;; being loaded are in: they would be missing otherwise.
                      (let [export {:file-id   file-id
                                    :page-id   page-id
                                    :object-id id
                                    :type      export-type
                                    :scale     (:scale value 1)}
-                           uri (case export-type
-                                 :pdf (wasm.exports/export-pdf-uri export)
-                                 :svg (wasm.exports/export-svg-uri export)
-                                 (wasm.exports/export-image-uri export))]
+                           render (fn []
+                                    (case export-type
+                                      :pdf (wasm.exports/export-pdf-uri export)
+                                      :svg (wasm.exports/export-svg-uri export)
+                                      (wasm.exports/export-image-uri export)))]
                        (js/Promise.
                         (fn [resolve reject]
-                          (->> (http/send!
-                                {:method :get
-                                 :uri uri
-                                 :response-type :blob
-                                 :omit-default-headers true})
+                          (->> (rx/from (p/then (p/delay 0) #(wasm.api/wait-images-loaded 10000)))
+                               (rx/mapcat
+                                (fn [_]
+                                  (http/send!
+                                   {:method :get
+                                    :uri (render)
+                                    :response-type :blob
+                                    :omit-default-headers true})))
                                (rx/map :body)
                                (rx/mapcat #(.arrayBuffer %))
                                (rx/map #(js/Uint8Array. %))

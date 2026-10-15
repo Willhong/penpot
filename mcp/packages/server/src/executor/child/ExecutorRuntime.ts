@@ -20,6 +20,8 @@ export interface ExecutorRuntimeConfig {
     settleTimeoutMs: number;
     /** URI users open Penpot at, for the links given to them */
     uiUri: string;
+    /** URI the backend is reached at from the executor, when it differs */
+    backendUri: string | null;
 }
 
 /**
@@ -63,7 +65,13 @@ export class ExecutorRuntime {
      * Boots the workspace for the user of `token` and builds the server Plugin API.
      */
     async init(token: string, sharedKey: string | null): Promise<ExecutorStatus> {
-        this.engine = await HeadlessEngine.boot(this.config.bundlePath, this.config.wasmDir, token, sharedKey);
+        this.engine = await HeadlessEngine.boot(
+            this.config.bundlePath,
+            this.config.wasmDir,
+            token,
+            sharedKey,
+            this.config.backendUri
+        );
         this.api = createServerPluginApi(
             createServerContext(this.engine.context(), {
                 observe: () => this.engine.observedScreen(),

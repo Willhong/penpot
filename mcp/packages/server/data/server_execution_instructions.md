@@ -24,6 +24,13 @@ Where this section differs from the rest of the overview, this section applies.
 * Listeners added with `penpot.on` stay until the session ends. They hear this session's changes and the changes others
   save. They cannot send you anything; record what they see in `storage` and read it in a later call. Remove them with
   `penpot.off` when you no longer need them.
+* `penpot.currentFile.export()` saves the changes the call made so far before exporting, so they are in the file:
+  an error later in the same call does not undo them. It exports the `penpot` format; `zip` is no longer offered.
+* A `Uint8Array` result comes back as base64 up to 1 MB. A larger one comes back as
+  `{ "__type": "resource", url, size, mtype, expiresAt }`: download it within 15 minutes with the same token
+  (`Authorization: Token <token>`). Return the bytes themselves, not inside an object, to get either form.
+* Long work (large exports, many shapes) can run in the background: call `execute_code` with `async: true`, then
+  read or cancel it with the `execution_job` tool.
 * Comments (`addCommentThread`, `reply`, `resolved`, `remove`) are written at once, as in a browser: an error later
   in the same call does not undo them. Open screens show them without a reload.
 * Error codes: `ui-only` (needs a browser), `forbidden`, `not-found` (also for a file you may only view),

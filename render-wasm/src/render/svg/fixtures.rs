@@ -593,7 +593,7 @@ pub(super) fn render(pool: &ShapesPool, root: Uuid) -> String {
 
 /// SVG export installs a process-wide resources pointer; serialize tests that
 /// call this so parallel rustc threads do not race / SIGSEGV.
-fn svg_export_test_lock() -> &'static Mutex<()> {
+pub(super) fn svg_export_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }

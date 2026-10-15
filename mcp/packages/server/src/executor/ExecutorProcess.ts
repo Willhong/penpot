@@ -33,6 +33,8 @@ export class ExecutorProcess {
     private exitReason: ExecutorError | null = null;
     /** whether the execution in progress has started saving */
     private saving = false;
+    /** told when the execution in progress starts saving */
+    private onSaving: (() => void) | undefined;
     private readonly exitedPromise: Promise<void>;
 
     /** time of the last request, for idle eviction */
@@ -50,8 +52,10 @@ export class ExecutorProcess {
                 PENPOT_EXECUTOR_BUNDLE: config.bundlePath,
                 PENPOT_EXECUTOR_WASM_DIR: config.wasmDir,
                 PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS: String(config.settleTimeoutMs),
-                PENPOT_PUBLIC_URI: config.publicUri,
-                PENPOT_EXECUTOR_UI_URI: config.uiUri,
+                // the bundle builds the links it hands out on the users' address; it reaches the backend
+                // at the executor's (internal) one
+                PENPOT_PUBLIC_URI: config.uiUri,
+                PENPOT_EXECUTOR_BACKEND_URI: config.publicUri,
                 PENPOT_FLAGS: config.flags,
                 PENPOT_VERSION: config.version,
             },
@@ -67,7 +71,7 @@ export class ExecutorProcess {
             serialization: "advanced",
         });
         this.child.on("message", (message: ExecutorResponse | ExecutorNotice) =>
-            "notice" in message ? (this.saving = true) : this.onResponse(message)
+            "notice" in message ? this.savingStarted() : this.onResponse(message)
         );
         // "close" comes after the IPC messages the process sent before it ended, such as a saving notice
         this.exitedPromise = new Promise((resolve) =>
@@ -102,13 +106,25 @@ export class ExecutorProcess {
      * `resource-limit`; nothing is saved, since an execution saves only at its end, unless it was saving
      * already (then the error says the changes may have been saved).
      */
-    async execute(params: ExecuteParams, timeoutMs: number, signal?: AbortSignal): Promise<ExecutionResult> {
+    async execute(
+        params: ExecuteParams,
+        timeoutMs: number,
+        signal?: AbortSignal,
+        onSaving?: () => void
+    ): Promise<ExecutionResult> {
         this.saving = false;
+        this.onSaving = onSaving;
         try {
             return await this.request<ExecutionResult>({ type: "execute", params }, timeoutMs, signal);
         } finally {
             this.saving = false;
+            this.onSaving = undefined;
         }
+    }
+
+    private savingStarted(): void {
+        this.saving = true;
+        this.onSaving?.();
     }
 
     /**
@@ -205,6 +221,10 @@ export class ExecutorProcess {
             }
             signal?.addEventListener("abort", onAbort, { once: true });
             this.child.send({ ...message, id } as ExecutorRequest);
+            if (signal?.aborted) {
+                // aborted while the process was starting: the listener above will not fire
+                onAbort();
+            }
         });
     }
 
@@ -238,7 +258,16 @@ export class ExecutorProcess {
             reason = new ExecutorError(reason.code, reason.message, "unknown");
         }
         this.exitReason = reason;
-        this.logger.info("Executor %s exited: code=%s signal=%s reason=%s", this.key, code, signal, reason.code);
+        // the key begins with the user's key: log its short form only
+        const [user, ...session] = this.key.split(":");
+        this.logger.info(
+            "Executor %s:%s exited: code=%s signal=%s reason=%s",
+            user.slice(0, 12),
+            session.join(":"),
+            code,
+            signal,
+            reason.code
+        );
         for (const pending of [...this.pending.values()]) {
             pending.reject(reason);
         }

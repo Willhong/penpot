@@ -92,12 +92,14 @@
 (defn ^:export boot
   "Boots the engine and the store for the user of `token`. Options (JS
   object): `token`, `sharedKey` (MCP shared key), `wasmDir` (directory of
-  `render-wasm.js`). Resolves to `{profileId, sessionId}`."
+  `render-wasm.js`), `backendUri` (address the backend is reached at from
+  here, when it differs from the public URI users open Penpot at). Resolves
+  to `{profileId, sessionId}`."
   [^js opts]
   ;; As `app.main/init` does: populate the Date prototype with the transit
   ;; handlers before the host hardens the intrinsics for the plugin sandbox.
   (-> (ct/now) (t/encode-str) (t/decode-str))
-  (auth/install! (.-token opts) (.-sharedKey opts))
+  (auth/install! (.-token opts) (.-sharedKey opts) (.-backendUri opts))
   (session/install-error-handler!)
   (session/install-router!)
   (with-contract-errors

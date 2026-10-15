@@ -15,11 +15,11 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
                         실행기 (Node, 별도 프로세스·컨테이너)
                           ├─ Sandbox: 사용자 JS 실행 (execute_code)
                           ├─ DocumentSession: 파일 작업본, penpot.* 서버 구현
-                          ├─ Engine: headless render-wasm (계산), cljc (변경 생성)
-                          └─ BackendClient: 사용자 token으로 RPC·exporter 호출
+                          ├─ Engine: headless render-wasm (계산·출력, D14), cljc (변경 생성)
+                          └─ BackendClient: 사용자 token으로 RPC 호출
                                    │ Authorization: Token <사용자 token>
                                    ▼
-                        backend (권한·저장·검증·알림) ── exporter (headless wasm 출력)
+                        backend (권한·저장·검증·알림)
 ```
 
 **[기술 결정]**
@@ -29,7 +29,7 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 
 ### D10 [사용자 결정 · 2026-10-15 확정] '브라우저 없이'의 범위
 
-- 선택지 1 (결정, 경로 A): 서버에서도 Chromium을 쓰지 않는다. 계산은 Node + headless render-wasm으로 하고, 출력도 exporter의 headless wasm 경로만 쓴다.
+- 선택지 1 (결정, 경로 A): 서버에서도 Chromium을 쓰지 않는다. 계산은 Node + headless render-wasm으로 하고, 출력도 exporter의 headless wasm 경로만 쓴다. (출력은 D14로 '같은 그리기 코드를 실행기 안에서'로 바뀌었다.)
 - 선택지 2: 사용자 브라우저만 없으면 된다. 서버의 headless Chromium(경로 C)을 계산·출력의 보조 경로로 허용한다.
   - 장점: E4가 실패해도 기능을 낼 수 있다.
   - 비용: 세션당 수백 MB, 처리 시간이 수 초 단위로 는다.
@@ -106,15 +106,27 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 ## 5. 출력 계약 (PEN-19)
 
 **[기술 결정]**
-- 래스터·PDF·SVG export는 exporter의 headless wasm 경로(`is-wasm` true)를 쓴다. 실행기가 exporter `POST /api/export`를 부른다.
-  - 도형 50개 이하이고 `wait`이면 동기로 처리하고, 그 밖에는 비동기 job으로 처리한다(exporter의 기존 job·Redis 진행 알림).
-- exporter 인증: 지금은 로그인 세션 쿠키만 받는다(E3). exporter가 `Authorization: Token`을 받아 backend `get-profile`로 사용자를 확인하도록 고친다(E10, PEN-19 범위). 서버 MCP용으로 사용자 세션 쿠키를 만들어 쓰지 않는다.
+- 래스터·PDF·SVG export는 실행기 안의 headless render-wasm이 그린다. 브라우저 플러그인(wasm 모드)의 `shape.export()`와 같은 frontend 코드를 쓰고, 래스터는 GPU 대신 CPU에 그린다(`_render_shape_raster_extended`: 브라우저 export와 같은 영역, exporter headless와 같은 그리기 코드). exporter 서비스는 부르지 않는다(D14).
+- ~~exporter 인증(E10)~~: D14로 필요 없어졌다. 실행기는 backend에만 사용자 MCP token과 `mcp` 공유 키로 요청한다(D11).
 - 결과 전달:
   - 1 MB 이하는 base64로 응답 본문에 넣는다. 현재 `export_shape`와 같은 envelope `{"__type":"base64","data":…}`를 쓴다.
-  - 그보다 크면 exporter가 올린 임시 자원 URL과 만료 시각을 돌려준다.
+  - 그보다 크면 MCP server가 결과를 15분 보관하고 `{"__type":"resource", url, size, mtype, expiresAt}`를 돌려준다. URL(`GET /results/:id`)은 같은 MCP token으로만 받을 수 있다. Redis가 있으면 Redis에 보관해 다른 인스턴스에서도 받는다.
 - `.penpot` 파일 내보내기·가져오기는 backend의 기존 binfile RPC를 쓴다.
 - 코드 생성(`generateMarkup/Style/FontFaces`)은 frontend `app.util.code-gen`을 DOM 없이 Node에서 돌린다. 문자열 출력이 같아야 한다. 이것이 불가능하면(E7) 같은 결과를 내는 서버 구현을 PEN-19에서 만든다. 기능은 빼지 않는다.
 - 비동기 결과: `{jobId, status: pending|running|done|error|cancelled, progress, resource?}`. 조회와 취소 도구를 둔다. job은 시작한 사용자만 볼 수 있다. 이는 exporter의 기존 job API 소유권 규칙과 같다.
+  - 구현: `execute_code`의 `async: true`가 job을 시작하고 `execution_job` 도구(`jobId`, `cancel`)가 읽거나 취소한다. `progress`는 끝나기 전까지 `queued|running|saving`이다. 결과가 URL이면 `resource`에도 담는다. 저장을 시작한 job은 취소해도 끝까지 저장한다(D6).
+
+### D14 [사용자 결정 · 2026-10-15 확정] 출력 경로
+
+**[사실]** exporter는 보드를 보드 크기(selrect)로 잘라 그린다. 보드 밖으로 나간 그림자가 빠지므로, 같은 보드라도 브라우저 플러그인 export(그림자 포함 영역)와 크기·내용이 다르다. 또 exporter는 저장된 파일만 그린다. 같은 실행에서 바꾼 내용을 내보내려면 먼저 저장해야 하고, 사용자 token 인증(E10)도 새로 만들어야 한다.
+
+**결정**: 실행기 안에서 그린다(위 §5). Chromium을 쓰지 않는다는 D10의 뜻은 그대로다. D10 설명의 '출력도 exporter의 headless wasm 경로만 쓴다'는 'exporter headless와 같은 render-wasm CPU 그리기 코드를 실행기 안에서 쓴다'로 바뀐다.
+
+### D15 [사용자 결정 · 2026-10-15 확정] 래스터 비교 대상
+
+**[사실]** 서버 래스터는 브라우저가 같은 CPU 경로로 그린 결과와 픽셀이 같다(PEN-19, 차이 0). 브라우저의 GPU export와는 픽셀 경계에 걸친 도형 가장자리만 antialiasing이 달라 0.1%를 넘을 수 있다(그림자가 있는 카드 1.07%, 텍스트·이미지 단독 0%). GPU 결과는 GPU 종류에 따라서도 다르다.
+
+**결정**: §6의 래스터 기준은 브라우저 CPU 경로와 비교한다. GPU export와의 가장자리 차이는 예외 목록에 남기고 PEN-9에서 잰다.
 
 ## 6. 동등성 기준 (PEN-9 판정 기준)
 
@@ -125,7 +137,7 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 | shape map | id 재매핑(생성 순서 기준), 시각·session 필드 제거, 숫자는 소수 2자리 반올림 | 완전히 같음 |
 | selrect / points / transform | — | 변환은 축별 0.01px, 레이아웃 결과는 0.5px |
 | 텍스트 크기 | 같은 폰트 바이트 | width/height 0.5px, 줄 수와 줄바꿈 위치 같음 |
-| 래스터 출력 | 같은 크기(텍스트는 도형 selrect 기준으로 자른 영역) | 채널 차이 2 초과 픽셀 0.1% 이하 |
+| 래스터 출력 | 같은 크기(텍스트는 도형 selrect 기준으로 자른 영역) | 채널 차이 2 초과 픽셀 0.1% 이하. 비교 대상은 브라우저의 CPU 래스터 export(D15). GPU export와는 크기가 같아야 한다 |
 | SVG / 코드 생성 문자열 | 공백 정규화 | 같음 |
 | 토큰 resolvedValue | — | 문자열 같음 |
 | 실행 결과 JSON | 키 정렬 | 같음 (UI 전용 member는 D8 규칙) |
@@ -137,6 +149,12 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 **결정**: 서버 계산 기준은 wasm으로 둔다(위 표와 같다). svg renderer 브라우저에서 보이는 차이와 재측정 여부는 PEN-9에서 재고 예외 목록에 남긴다. 이번 구현 범위는 바꾸지 않는다.
 
 알려진 차이는 예외 목록에 남긴다. 예: `TokenTheme.externalId`, 텍스트 export의 잘린 영역 차이(E3b). 기준을 완화하려면 사용자 결정이 필요하다.
+
+PEN-19에서 정한 예외(2026-10-15):
+- 브라우저 GPU export와의 도형 가장자리 antialiasing 차이(D15).
+- `generateMarkup({type: "svg"})`: 서버는 텍스트가 쓰는 폰트의 `@font-face`를 `<style>`에 넣고 브라우저는 비운다. frontend 공용 hook(rumext `use-ssr-effect`)이 화면이 없는 환경에서만 폰트 CSS를 바로 채우기 때문이다. 사용자 결정으로 서버 결과를 유지한다.
+- PDF의 이미지: 서버는 이미지에 sRGB ICC profile을 붙이고(`/ICCBased`) 브라우저는 `/DeviceRGB`로 둔다. 서버는 Skia가 이미지를 디코딩하고 브라우저는 GPU texture를 읽기 때문이다. 이미지 픽셀 데이터는 같다.
+- 내보낸 링크의 주소: 서버는 사용자가 여는 공개 주소로, 브라우저는 그 탭의 주소로 만든다. media id는 실행마다 새로 올리므로 다르다. 비교 때 정규화한다.
 
 ## 7. 오류 코드
 
@@ -174,7 +192,7 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 | PEN-17 | cljc | — | PEN-5 |
 | PEN-24 | mcp server 연결, frontend 따라가기 UI, 화면 이동 신호 | D8 (f) 규칙, 지연 D7 | PEN-4, PEN-10 |
 | PEN-18 | comments RPC | 알림은 backend가 보냄 | PEN-10 |
-| PEN-19 | exporter headless, code-gen | §5, exporter token 인증(E10) | E7, E10 |
+| PEN-19 | Engine(render-wasm CPU 출력), code-gen | §5, D14, D15 | E7 |
 | PEN-20 | DocumentSession undo stack | 실행 1회 = undo 1단위, 실패 시 저장 없음 | PEN-10 |
 
 ## 9. 병렬 구현·독립 시험 방법

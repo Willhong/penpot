@@ -229,7 +229,7 @@ upstream 참고: upstream develop의 컴포넌트 관리 API(#12303)는 이 브�
 - 깨진 SVG의 오류 코드를 계약대로 `svg-parser`로 돌려준다.
 - 로컬 모드에서 서버 실행을 쓸 때 `import_image`가 브라우저 플러그인 경로만 썼다. `execute_code`와 같은 실행기 경로를 쓴다(원격 모드에서는 도구 자체가 없다).
 
-남은 일: `export_shape`도 서버 실행 연결에서 아직 브라우저 플러그인 경로를 쓴다. 내보내기는 PEN-19에서 다룬다.
+남은 일이던 `export_shape`의 서버 실행은 PEN-19에서 연결했다.
 
 ## PEN-17 Flow·상호작용·가이드·viewer (2026-10-15, `experiments/pen17_prototype.py`)
 
@@ -260,3 +260,30 @@ upstream 참고: upstream develop의 컴포넌트 관리 API(#12303)는 이 브�
 - **다른 세션이 단 댓글이 열린 화면에 나타나지 않았다.** 댓글 RPC는 알림을 보내지 않아 새로고침해야 보였다. backend가 댓글 스레드·댓글을 만들고 고치고 지우고 해결하고 옮길 때 파일 채널로 `:comment-change`를 보낸다. 트랜잭션이 끝난 뒤 보내므로(`rph/with-defer`) 커밋되지 않은 댓글을 받는 일이 없다. 화면은 이 알림을 받으면 스레드 목록을 다시 받는다(사라진 스레드와 그 표시도 지운다). 알림 연결을 다시 열 때도 다시 받는다.
 
 참고: 댓글은 도형과 달리 실행 끝에 한 번에 저장되지 않고 호출할 때 바로 저장된다(브라우저와 같음). 같은 실행에서 뒤에 오류가 나도 남는다. 서버 실행 안내(`high_level_overview`)에 적었다.
+
+## PEN-19 내보내기·코드 생성 (2026-10-15, `experiments/pen19_exports.py`)
+
+시나리오 `pen19_export.js`: 그림자·둥근 모서리가 있는 보드에 Flex 레이아웃, 영문·한글 텍스트, 그라데이션 원, 이미지 채우기 사각형, 컴포넌트 사본, 패스. 같은 코드를 브라우저(wasm 모드, editor 탭)와 서버에서 돌린다.
+
+| 확인 | 결과 |
+|---|---|
+| PNG(1x·2x)·JPEG·WEBP: 보드, 텍스트, 이미지 사각형 | 6개 모두 브라우저의 CPU 래스터 export와 픽셀 차이 0, 브라우저 GPU export와 크기 같음. GPU export와는 가장자리 antialiasing 차이(보드 1.07%, 2x 0.54%, JPEG 2.4%; 텍스트·이미지 단독 0%, D15 예외). [서버 · 브라우저 CPU · 브라우저 GPU](../../../.mcp-verify/shots/pen19-card-compare.png) |
+| SVG export | 링크 주소·media id를 정규화하면 같음. 서버 SVG의 이미지·폰트 링크는 사용자가 여는 공개 주소(`https://localhost:3549`) |
+| PDF export | 이미지의 색 공간 표시(ICC profile)만 빼면 내용 stream이 모두 같음(03 §6 예외) |
+| `generateMarkup`(html·svg)·`generateStyle`(css, prelude)·`generateFontFaces` | id·주소를 정규화하면 같음. svg 마크업만 서버가 `@font-face`를 더 넣음(사용자 결정으로 유지, 03 §6 예외) |
+| 1 MB 넘는 결과(700×700 잡음 이미지 PNG, 1.7 MB) | `execute_code`와 `export_shape`가 다운로드 URL을 줌. 주인 token으로 받으면 같은 크기의 PNG, 다른 사용자·token 없음은 404 |
+| `async: true` | 바로 job을 돌려주고 `running` → `done`, 결과와 저장 확인. 실행 중 취소하면 `cancelled`이고 도형이 저장되지 않음. 다른 사용자는 job을 볼 수 없음(`not-found`). 큰 결과의 job은 `resource`에 URL |
+| `export_shape`(서버 세션): png, svg, 이미지 채우기 원본 | 405×285 PNG, SVG 문자열, 24×16 원본 이미지 |
+| `.penpot` 파일 내보내기 → backend `import-binfile`로 가져오기 | 같은 실행에서 만든(아직 저장 전) 도형까지 담기고, 가져온 파일의 도형이 같음. `zip` 형식은 메시지와 함께 거부 |
+
+고친 결손:
+- **서버에서 래스터 export가 GPU 화면을 찾다 실패했다.** headless에서는 CPU에 그린다. 새 함수 `_render_shape_raster_extended`는 exporter의 CPU 래스터 코드를 쓰되 보드도 그림자까지 포함한 영역으로 그린다(브라우저 export와 같은 크기).
+- **CPU로 그리면 이미지 채우기의 가장자리가 얇아졌다**(exporter 공통). 이미지를 도형 모양으로 자르는 antialiasing clip과 이미지 자체의 antialiasing이 겹쳐 가장자리 픽셀 coverage가 제곱이 됐다(0.7 → 0.49). 브라우저 렌더처럼 모서리 없는 축 정렬 사각형은 자르지 않는다. render-wasm 단위 시험 추가.
+- **이미지를 받는 중에 export하면 이미지가 빠졌다**(브라우저 공통, 첫 비교에서 브라우저 쪽 9.5% 차이의 원인). export 전에 받고 있는 이미지를 기다린다(최대 10초).
+- **서버에서 이미지를 불러올 수 없었다.** 디코더·WebGL 대신 바이트를 Skia에 넘긴다.
+- **파일 내보내기(`penpot.currentFile.export`)가 서버에서 동작하지 않았고 저장 전 변경이 빠졌다.** backend의 `create-export-binfile-job` → job 완료 대기 → 결과 받기로 바꾸고, 먼저 저장한다. 없어진 `zip` 형식은 이유를 알려 거부한다.
+- **서버 export의 링크가 실행기 내부 주소를 가리켰다.** 실행기는 사용자가 여는 주소로 링크를 만들고, 그 주소로 가는 요청만 내부 backend 주소로 보낸다.
+- **backend 자산 경로(`/assets`)가 MCP 공유 키를 몰라** 실행기가 이미지·폰트를 받지 못했다(401). 다른 경로처럼 공유 키를 확인한다.
+
+결정(사용자, 03 D14·D15): exporter 서비스 대신 실행기 안에서 그린다. 그래서 exporter token 인증(E10)은 만들지 않았다. 래스터는 브라우저 CPU 경로와 비교한다.
+

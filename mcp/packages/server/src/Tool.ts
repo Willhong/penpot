@@ -5,6 +5,8 @@ import type { PenpotMcpServer, SessionContext } from "./PenpotMcpServer";
 import { createLogger } from "./logger";
 import { ExecutorError } from "./executor/ExecutorError";
 import type { ExecuteParams, ExecutionResult } from "./executor/ExecutorProtocol";
+import { ExecutorConfig } from "./executor/ExecutorConfig";
+import type { JobReporter } from "./executor/ExecutionJobs";
 
 /**
  * An empty arguments class for tools that do not require any parameters.
@@ -131,18 +133,47 @@ export abstract class Tool<TArgs extends object> {
      * @param sessionId - the executor session, `default` when omitted
      * @param signal - aborts the execution before its save (D6)
      * @param requestId - the client's request ID, for deduplication (D5)
+     * @param progress - told when the execution starts and starts saving (background jobs)
      */
     protected executeOnServer(
         params: ExecuteParams,
         sessionId?: string,
         signal?: AbortSignal,
-        requestId?: string
+        requestId?: string,
+        progress?: JobReporter
     ): Promise<ExecutionResult> {
         const token = this.getSessionContext()?.userToken;
         if (!token) {
             throw new ExecutorError("forbidden", "server-side execution needs the user's MCP token (userToken)");
         }
-        return this.mcpServer.executorPool!.execute(token, sessionId ?? "default", params, signal, requestId);
+        return this.mcpServer.executorPool!.execute(token, sessionId ?? "default", params, signal, requestId, progress);
+    }
+
+    /**
+     * The execution with a result too large to send inline replaced by a download URL (03-runtime-contract §5).
+     */
+    protected async deliverLarge(result: ExecutionResult): Promise<ExecutionResult> {
+        const context = this.getSessionContext();
+        if (!context?.userToken || !this.mcpServer.executorPool) {
+            return result;
+        }
+        const delivered = await this.mcpServer.executorPool.results.deliver(
+            result.result,
+            ExecutorConfig.ownerKey(context.userToken),
+            context.baseUrl ?? ""
+        );
+        return delivered === result.result ? result : { ...result, result: delivered };
+    }
+
+    /**
+     * Fingerprint of the request's user token, which owns its results and jobs.
+     */
+    protected ownerKey(): string {
+        const token = this.getSessionContext()?.userToken;
+        if (!token) {
+            throw new ExecutorError("forbidden", "server-side execution needs the user's MCP token (userToken)");
+        }
+        return ExecutorConfig.ownerKey(token);
     }
 
     public getInputSchema() {

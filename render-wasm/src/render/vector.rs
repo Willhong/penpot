@@ -9,6 +9,7 @@ use crate::state::ShapesPoolRef;
 use crate::uuid::Uuid;
 
 use super::children_paint_order;
+use super::fills::is_axis_aligned_image_rect;
 use super::shape_renderer::ShapeRenderer;
 use super::text;
 use super::RenderResources;
@@ -1116,8 +1117,12 @@ fn draw_image_fill(
 
     canvas.save();
 
-    // Clip to shape
-    clip_to_shape(canvas, shape, true);
+    // Clip to shape, unless the image fills it exactly: the antialiased clip
+    // would cover its edges a second time and thin them, unlike the
+    // workspace render.
+    if image_fill.transform().is_some() || !is_axis_aligned_image_rect(shape) {
+        clip_to_shape(canvas, shape, true);
+    }
 
     let mut paint = Paint::default();
     paint.set_anti_alias(true);

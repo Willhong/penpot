@@ -48,6 +48,13 @@ export class ExecuteCodeArgs {
                 "Server-side execution only: run and save only if the file is still at this revn (the `revn` of " +
                     "an earlier result); fails with `precondition-failed` when someone changed it since."
             ),
+        async: z
+            .boolean()
+            .optional()
+            .describe(
+                "Server-side execution only: run in the background and answer at once with a `jobId`; read the " +
+                    "status and the result, or cancel, with the `execution_job` tool. For long work, such as large exports."
+            ),
     };
 
     /**
@@ -64,6 +71,8 @@ export class ExecuteCodeArgs {
     requestId?: string;
 
     ifUnchangedSinceRevn?: number;
+
+    async?: boolean;
 }
 
 /**
@@ -122,22 +131,27 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
         "open; without one, reading the viewport fails with the error code `ui-only` and the theme is 'light'. " +
         "Members that need a browser window (`penpot.ui`, moving the viewport, `openViewer()`, " +
         "`openPage(page, true)`, `closePlugin()`) fail with `ui-only`. " +
-        "Listeners added with `penpot.on` stay until the session ends.";
+        "Listeners added with `penpot.on` stay until the session ends.\n" +
+        "A `Uint8Array` result (e.g. `await shape.export({ type: 'pdf' })`) comes back as base64 up to 1 MB and as a " +
+        "download URL (`__type: 'resource'`, valid 15 minutes, for your token only) when larger.";
 
     protected async executeCore(args: ExecuteCodeArgs, signal?: AbortSignal): Promise<ToolResponse> {
         if (this.usesServerExecution()) {
-            const result = await this.executeOnServer(
-                {
-                    code: args.code,
-                    fileId: args.fileId,
-                    pageId: args.pageId,
-                    ifUnchangedSinceRevn: args.ifUnchangedSinceRevn,
-                },
-                args.sessionId,
-                signal,
-                args.requestId
-            );
-            return new TextResponse(JSON.stringify(result, null, 2));
+            const params = {
+                code: args.code,
+                fileId: args.fileId,
+                pageId: args.pageId,
+                ifUnchangedSinceRevn: args.ifUnchangedSinceRevn,
+            };
+            if (args.async) {
+                const ownerKey = this.ownerKey();
+                const job = this.mcpServer.executorPool!.jobs.start(ownerKey, (jobSignal, progress) =>
+                    this.executeOnServer(params, args.sessionId, jobSignal, args.requestId, progress)
+                );
+                return new TextResponse(JSON.stringify(job, null, 2));
+            }
+            const result = await this.executeOnServer(params, args.sessionId, signal, args.requestId);
+            return new TextResponse(JSON.stringify(await this.deliverLarge(result), null, 2));
         }
 
         const taskParams: ExecuteCodeTaskParams = { code: args.code };

@@ -39,6 +39,8 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | `ExecutorPool` | `server/src/executor/ExecutorPool.ts` | 세션별 프로세스, 세션 안 실행 순서, 동시 실행 상한(D9), 유휴 세션 정리, 실행 로그(D9) |
 | `ExecutorProcess` | `server/src/executor/ExecutorProcess.ts` | 프로세스 시작(깨끗한 환경 변수, `--max-old-space-size`), 요청·응답 짝짓기, 시간 초과·취소 시 종료 |
 | `ExecutorConfig` | `server/src/executor/ExecutorConfig.ts` | 환경 변수, 공유 키 파생, token 지문 |
+| `ResultStore` | `server/src/executor/ResultStore.ts` | 1 MB를 넘는 결과를 15분 보관하고 주인만 받는 URL(`GET /results/:id`)을 준다(`03` §5). Redis가 있으면 Redis에 둔다 |
+| `ExecutionJobs` | `server/src/executor/ExecutionJobs.ts` | `async: true` 실행(job)의 상태·결과·취소. 시작한 사용자만 본다 |
 | `ExecutorProtocol`, `ExecutorError` | `server/src/executor/` | IPC 메시지, 결과 envelope, 오류 코드(§7) |
 | `ExecutorRuntime` | `server/src/executor/child/ExecutorRuntime.ts` | 실행 1회: 파일 열기 → 시작 → 코드 → 완료 또는 취소 |
 | `Sandbox` | `server/src/executor/child/Sandbox.ts` | SES 정리·동결, compartment 전역 |
@@ -98,6 +100,9 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | `sessionId` | 실행기 세션 이름(기본 `default`) |
 | `requestId` | D5: 같은 ID의 재시도는 10분 동안 첫 결과를 `replayed: true`로 돌려준다 |
 | `ifUnchangedSinceRevn` | D4: 파일이 그 revn 뒤로 바뀌었으면 실행·저장하지 않고 `precondition-failed`. 시작할 때와 저장 직전에 확인한다 |
+| `async` | `true`면 바로 job을 돌려주고 뒤에서 실행한다. `execution_job` 도구(`jobId`, `cancel`)로 상태·결과를 읽거나 취소한다 |
+
+결과 값이 `Uint8Array`이면 1 MB까지는 base64 envelope(`{"__type":"base64","data":…}`)로, 그보다 크면 `{"__type":"resource", url, size, mtype, expiresAt}`로 돌려준다. URL은 같은 MCP token(`Authorization: Token …` 또는 `?userToken=`)으로만 받을 수 있다. `export_shape`도 서버 실행 연결에서는 같은 실행기 세션에서 내보낸다(`fileId`, `pageId` 인자).
 
 클라이언트가 요청을 취소하거나 연결을 끊으면 실행기에 취소를 보낸다(D6).
 
@@ -178,3 +183,6 @@ AI 클라이언트 안내: 서버 실행 연결에서는 `high_level_overview`�
 | 파일을 열고 코드 실행 | 사람이 조작하기 전에 라이브러리가 보통 다 들어와 있다 | 연결된 라이브러리 내용을 다 받은 뒤 코드를 돌린다(`all-libraries-resolved`) | 열자마자 코드를 돌린다 |
 | 번역 | 프로필 언어, 없으면 브라우저 언어 | 프로필 언어, 없으면 영어 | 브라우저 언어가 없다 |
 | npm CommonJS 패키지 | 번들러가 묶는다 | Node ESM `import` + 모듈 훅이 이름 붙은 내보내기를 만든다(`CjsInterop.ts`) | `sax` 같은 패키지는 Node가 내보내기를 찾지 못한다 |
+| 이미지 불러오기 | 브라우저가 디코딩해 WebGL texture로 넘긴다 | 바이트를 그대로 넘겨 Skia가 디코딩한다(headless exporter와 같다) | 디코더와 WebGL이 없다 |
+| 도형 래스터 export | GPU 화면에 그려 읽는다(`_render_shape_pixels`) | CPU에 그린다(`_render_shape_raster_extended`, 같은 영역·같은 그리기 코드) | GPU가 없다 |
+| 주소 | 화면 주소가 곧 backend 주소 | 내보내는 링크(SVG의 이미지·폰트, viewer URL)는 사용자가 여는 주소(`PENPOT_MCP_EXECUTOR_UI_URI`, 없으면 `PENPOT_PUBLIC_URI`)로 만들고, 그 주소로 가는 요청은 실행기가 닿는 backend 주소(`PENPOT_MCP_EXECUTOR_PUBLIC_URI`)로 보낸다 | 실행기는 내부 주소로 backend에 닿는다 |

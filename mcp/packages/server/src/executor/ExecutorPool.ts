@@ -3,7 +3,9 @@ import { ExecutorConfig } from "./ExecutorConfig";
 import { ExecutorError } from "./ExecutorError";
 import type { ExecuteParams, ExecutionResult } from "./ExecutorProtocol";
 import { ExecutorProcess } from "./ExecutorProcess";
+import { ExecutionJobs, type JobReporter } from "./ExecutionJobs";
 import { MemoryLedgerStore, RedisLedgerStore, RequestLedger } from "./RequestLedger";
+import { MemoryResultBackend, RedisResultBackend, ResultStore } from "./ResultStore";
 
 /**
  * One executor session: a process and the queue that runs its executions one at a time.
@@ -75,6 +77,10 @@ export class ExecutorPool {
     private running = 0;
     private readonly idleTimer: NodeJS.Timeout;
     private readonly ledger: RequestLedger;
+    /** large results handed out by URL (03-runtime-contract §5) */
+    readonly results: ResultStore;
+    /** executions run in the background */
+    readonly jobs = new ExecutionJobs();
     /** executions in progress, with their request ID records */
     private readonly inProgress = new Set<Promise<unknown>>();
     private closing = false;
@@ -87,6 +93,11 @@ export class ExecutorPool {
             config.redisUri
                 ? new RedisLedgerStore(config.redisUri, `penpot-mcp:${config.tenant}:executor-request:`)
                 : new MemoryLedgerStore()
+        );
+        this.results = new ResultStore(
+            config.redisUri
+                ? new RedisResultBackend(config.redisUri, `penpot-mcp:${config.tenant}:executor-result:`)
+                : new MemoryResultBackend()
         );
         this.idleTimer = setInterval(() => this.closeIdleSessions(), Math.min(config.idleMs, 60_000));
         this.idleTimer.unref();
@@ -101,19 +112,21 @@ export class ExecutorPool {
      * @param signal - aborts the execution before its save (D6)
      * @param requestId - the client's ID of this request; a retry with the same ID within 10 minutes gets the
      *   first run's result instead of running again (D5)
+     * @param progress - told when the execution starts and when it starts saving
      */
     execute(
         token: string,
         sessionName: string,
         params: ExecuteParams,
         signal?: AbortSignal,
-        requestId?: string
+        requestId?: string,
+        progress?: JobReporter
     ): Promise<ExecutionResult> {
         const execution = requestId
-            ? this.ledger.once(ExecutorConfig.fingerprint(token), requestId, () =>
-                  this.enqueue(token, sessionName, params, signal)
+            ? this.ledger.once(ExecutorConfig.ownerKey(token), requestId, () =>
+                  this.enqueue(token, sessionName, params, signal, progress)
               )
-            : this.enqueue(token, sessionName, params, signal);
+            : this.enqueue(token, sessionName, params, signal, progress);
         this.inProgress.add(execution);
         execution.then(
             () => this.inProgress.delete(execution),
@@ -126,9 +139,10 @@ export class ExecutorPool {
         token: string,
         sessionName: string,
         params: ExecuteParams,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        progress?: JobReporter
     ): Promise<ExecutionResult> {
-        const userKey = ExecutorConfig.fingerprint(token);
+        const userKey = ExecutorConfig.ownerKey(token);
         const key = `${userKey}:${sessionName}`;
         let session = this.sessions.get(key);
         if (!session) {
@@ -141,14 +155,15 @@ export class ExecutorPool {
             this.sessions.set(key, session);
         }
         const target = session;
-        return target.enqueue(() => this.run(target, token, params, signal));
+        return target.enqueue(() => this.run(target, token, params, signal, progress));
     }
 
     private async run(
         session: ExecutorSession,
         token: string,
         params: ExecuteParams,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        progress?: JobReporter
     ): Promise<ExecutionResult> {
         if (this.closing) {
             // queued behind an execution the shutdown cancelled: do not start another process
@@ -159,8 +174,13 @@ export class ExecutorPool {
         let outcome = "ok";
         let result: ExecutionResult | undefined;
         try {
+            if (signal?.aborted) {
+                // cancelled while it waited in the session's queue
+                throw new ExecutorError("cancelled", "the execution was cancelled before it started");
+            }
+            progress?.started();
             const process = await session.getProcess(this.config, token);
-            result = await process.execute(params, this.config.timeoutMs, signal);
+            result = await process.execute(params, this.config.timeoutMs, signal, () => progress?.saving());
             return result;
         } catch (error) {
             outcome = error instanceof ExecutorError ? error.code : "engine-error";
@@ -169,7 +189,7 @@ export class ExecutorPool {
             this.release(session.userKey);
             this.logger.info(
                 "execution user=%s session=%s file=%s ms=%d changes=%d result=%s",
-                session.userKey,
+                session.userKey.slice(0, 12),
                 session.name,
                 result?.commit?.fileId ?? params.fileId ?? "-",
                 Date.now() - started,
@@ -201,7 +221,12 @@ export class ExecutorPool {
             throw new ExecutorError("resource-limit", `${limit}, and all of them are running`);
         }
         const oldest = idle[0];
-        this.logger.info("closing executor session %s to make room (%s)", oldest.key, limit);
+        this.logger.info(
+            "closing executor session %s:%s to make room (%s)",
+            oldest.userKey.slice(0, 12),
+            oldest.name,
+            limit
+        );
         oldest.close();
         this.sessions.delete(oldest.key);
     }
@@ -238,7 +263,7 @@ export class ExecutorPool {
             if (!process || !process.alive) {
                 this.sessions.delete(key);
             } else if (now - process.lastUsed > this.config.idleMs) {
-                this.logger.info("closing idle executor session %s", key);
+                this.logger.info("closing idle executor session %s:%s", session.userKey.slice(0, 12), session.name);
                 process.kill(null);
                 this.sessions.delete(key);
             }
@@ -261,5 +286,6 @@ export class ExecutorPool {
         this.sessions.clear();
         await Promise.allSettled([...this.inProgress]);
         await this.ledger.close();
+        await this.results.close();
     }
 }

@@ -16,7 +16,7 @@
 | [feature-inventory.md](feature-inventory.md) | PEN-1 | member·도구별 담당 티켓과 검증 시나리오 (생성 파일) | 미매핑 0 |
 | [verification-env.md](verification-env.md) | PEN-2 | 운영과 분리한 검증 스택 사용법 | 완료 |
 | [02-browser-dependency-research.md](02-browser-dependency-research.md) | PEN-7 | 기능별 브라우저 의존성, 서버 경로 대안, 실험 E1–E3 | 완료, 미확인 E4–E11 목록 |
-| [03-runtime-contract.md](03-runtime-contract.md) | PEN-8 | 실행 격리, 완료 단계, 계산·출력 계약, 동등성 기준, 오류 코드 | 기술 계약 확정, E4 실증, blocker E5–E7·E10, D10·D12·D13 확정 |
+| [03-runtime-contract.md](03-runtime-contract.md) | PEN-8 | 실행 격리, 완료 단계, 계산·출력 계약, 동등성 기준, 오류 코드 | 기술 계약 확정, E4 실증, blocker E5–E7, D10·D12–D15 확정(D14로 E10 불필요) |
 | [04-executor.md](04-executor.md) | PEN-10 | 서버 실행기 구성 요소와 interface, 실행 순서, 세션, 측정값 | interface 확정, PEN-3 연결 |
 | [05-results.md](05-results.md) | PEN-22 | 티켓별 실제 MCP 시험 결과 | PEN-3, PEN-4 |
 

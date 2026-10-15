@@ -6,8 +6,9 @@
  * - `PENPOT_EXECUTOR_BUNDLE`: path of the frontend `:executor` build's `executor.js`
  * - `PENPOT_EXECUTOR_WASM_DIR`: directory of `render-wasm.js` / `render-wasm.wasm`
  * - `PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS`: default bound for waiting on derived values
- * - `PENPOT_PUBLIC_URI`, `PENPOT_FLAGS`, `PENPOT_VERSION`: frontend configuration (read by the bundle)
- * - `PENPOT_EXECUTOR_UI_URI`: URI users open Penpot at, for the links given to them
+ * - `PENPOT_PUBLIC_URI`, `PENPOT_FLAGS`, `PENPOT_VERSION`: frontend configuration (read by the bundle);
+ *   the public URI is the one users open Penpot at, so the links handed out work for them
+ * - `PENPOT_EXECUTOR_BACKEND_URI`: the backend as reached from the executor, when it differs
  *
  * The user's token and the MCP shared key arrive with the `init` request, not through the environment.
  */
@@ -38,7 +39,8 @@ const runtime = new ExecutorRuntime(
         bundlePath: requireEnv("PENPOT_EXECUTOR_BUNDLE"),
         wasmDir: requireEnv("PENPOT_EXECUTOR_WASM_DIR"),
         settleTimeoutMs: parseInt(process.env.PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS ?? "10000", 10),
-        uiUri: process.env.PENPOT_EXECUTOR_UI_URI ?? requireEnv("PENPOT_PUBLIC_URI"),
+        uiUri: requireEnv("PENPOT_PUBLIC_URI"),
+        backendUri: process.env.PENPOT_EXECUTOR_BACKEND_URI ?? null,
     },
     // sent before the save request leaves, so the server never takes an ended save for "nothing saved"
     () => {

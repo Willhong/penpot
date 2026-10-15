@@ -496,6 +496,8 @@
     ::sto/storage                   (ig/ref ::sto/storage)
     ::session/manager               (ig/ref ::session/manager)
     ::setup/props                   (ig/ref ::setup/props)
+    ;; lets the server-side MCP executor read assets with the user's MCP token (D11)
+    ::setup/shared-keys             (ig/ref ::setup/shared-keys)
     ::db/pool                       (ig/ref ::db/pool)}
 
    ::rpc/climit

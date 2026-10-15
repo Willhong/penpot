@@ -75,15 +75,18 @@ pub fn render_to_raster(
     tree: ShapesPoolRef,
     scale: f32,
     format: RasterFormat,
+    boards_at_selrect: bool,
 ) -> Result<(Vec<u8>, i32, i32)> {
     let Some(shape) = tree.get(id) else {
         return Ok((Vec::new(), 0, 0));
     };
-    // Boards export at their own bounds (like the classic exporter, which
-    // screenshots exactly the board box): content overflowing a board lands
-    // outside the page/surface and is cropped. Other shapes keep the extended
-    // rect so their own shadows/blur are included.
-    let bounds = if matches!(shape.shape_type, crate::shapes::Type::Frame(_)) {
+    // With `boards_at_selrect` (the exporter), boards export at their own
+    // bounds, like the classic exporter, which screenshots exactly the board
+    // box: content overflowing a board lands outside the page/surface and is
+    // cropped. Otherwise (the workspace's own export, as `render_shape_pixels`
+    // does on the GPU) every shape keeps the extended rect, so shadows and
+    // blur outside a board are included.
+    let bounds = if boards_at_selrect && matches!(shape.shape_type, crate::shapes::Type::Frame(_)) {
         shape.selrect()
     } else {
         shape.extrect(tree, scale)

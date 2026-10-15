@@ -11,14 +11,14 @@
    [app.common.files.validate :as cfv]
    [app.common.time :as ct]
    [app.common.uuid :as uuid]
-   [app.config :as cf]
    [app.main.data.exports.files :as exports.files]
+   [app.main.data.jobs :as dj]
+   [app.main.data.persistence :as dwp]
    [app.main.data.plugins :as dp]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.versions :as dwv]
    [app.main.repo :as rp]
    [app.main.store :as st]
-   [app.main.worker :as mw]
    [app.plugins.format :as format]
    [app.plugins.page :as page]
    [app.plugins.parser :as parser]
@@ -270,48 +270,49 @@
                       :detach :detach-libraries
                       type)]
            (cond
-             (and (some? format) (not (contains? #{"penpot" "zip"} format)))
+             ;; The legacy zip export was removed; files export as `.penpot`
+             ;; (binfile v3) only, as in the dashboard.
+             (= format "zip")
+             (u/reject-not-valid reject :format "The zip format is no longer exported: use 'penpot'")
+
+             (and (some? format) (not= format "penpot"))
              (u/reject-not-valid reject :format (dm/str "Invalid format: " format))
 
              (not (contains? (set exports.files/valid-types) type))
              (u/reject-not-valid reject :format (dm/str "Invalid type: " type))
 
              :else
-             (let [file       (u/locate-file id)
-                   features   (:features @st/state)
-                   team-id    (:current-team-id @st/state)
-                   format     (case format
-                                "zip"    :legacy-zip
+             ;; The same backend job the dashboard export runs. It reads the
+             ;; saved file, so the pending changes are saved first, as the
+             ;; shape export through the exporter does.
+             (->> (rx/concat
+                   (do (st/emit! ::dwp/force-persist)
+                       (->> (dwp/wait-persisted-or-error 10000)
+                            (rx/ignore)))
+                   (rp/cmd! :create-export-binfile-job
+                            {:params {:file-ids #{id} :export-type type}}))
+                  (rx/mapcat (fn [{job-id :id}]
+                               (dj/watch-job (:ws-conn @st/state) job-id)))
+                  (rx/filter :status)
+                  (rx/take 1)
+                  (rx/mapcat
+                   (fn [{:keys [status result error]}]
+                     (case status
+                       "completed"
+                       ;; read the body, as `ImageData.data()` does: a `no-cors`
+                       ;; response is opaque and has none
+                       (http/send! {:method :get
+                                    :uri (:resource-uri result)
+                                    :response-type :buffer})
 
-                                (if (contains? cf/flags :export-file-v3)
-                                  :binfile-v3
-                                  :binfile-v1))]
-               (->> (mw/ask-many!
-                     {:cmd :export-files
-                      :format format
-                      :type type
-                      :team-id team-id
-                      :features features
-                      :files [file]})
-                    (rx/mapcat
-                     (fn [msg]
-                       (.log js/console msg)
-                       (case (:type msg)
-                         :error
-                         (rx/throw (ex-info "cannot export file" {:type :export-file}))
+                       "cancelled"
+                       (rx/throw (ex-info "the file export was cancelled" {:type :export-file}))
 
-                         :progress
-                         (rx/empty)
+                       (rx/throw (ex-info "cannot export file" {:type :export-file :error error})))))
+                  (rx/map #(js/Uint8Array. (:body %)))
+                  (rx/tap #(st/emit! (se/event plugin-id "export-binary-files" :format "binfile-v3" :type type)))
+                  (rx/subs! resolve reject)))))))
 
-                         :finish
-                         (http/send! {:method :get
-                                      :uri (:uri msg)
-                                      :mode :no-cors
-                                      :response-type :buffer}))))
-                    (rx/take 1)
-                    (rx/map #(js/Uint8Array. (:body %)))
-                    (rx/tap #(st/emit! (se/event plugin-id "export-binary-files" :format format :type type)))
-                    (rx/subs! resolve reject))))))))
     :findVersions
     (fn [criteria]
       (let [user (obj/get criteria "createdBy" nil)]

@@ -114,8 +114,16 @@ impl State {
         id: &Uuid,
         scale: f32,
         format: RasterFormat,
+        boards_at_selrect: bool,
     ) -> Result<(Vec<u8>, i32, i32)> {
-        crate::render::raster::render_to_raster(get_resources(), id, &self.shapes, scale, format)
+        crate::render::raster::render_to_raster(
+            get_resources(),
+            id,
+            &self.shapes,
+            scale,
+            format,
+            boards_at_selrect,
+        )
     }
 
     /// Distinct font families used by the (visible) subtree rooted at `id`, in

@@ -58,7 +58,7 @@ fn clip_to_shape(
 
 /// Axis-aligned rect/frame with no corner radii: `dest` fills `selrect`, so a
 /// clip to the container is a no-op before `draw_image_rect`.
-fn is_axis_aligned_image_rect(shape: &Shape) -> bool {
+pub(super) fn is_axis_aligned_image_rect(shape: &Shape) -> bool {
     matches!(
         &shape.shape_type,
         Type::Rect(Rect { corners: None }) | Type::Frame(Frame { corners: None, .. })

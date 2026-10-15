@@ -37,6 +37,16 @@ export class ExportShapeArgs {
                     "the image data is returned directly for you to see."
             ),
         sessionId: Tool.SESSION_ID_SCHEMA,
+        fileId: z
+            .string()
+            .uuid()
+            .optional()
+            .describe("Server-side execution only: the file to open first (default: the file the session has open)."),
+        pageId: z
+            .string()
+            .uuid()
+            .optional()
+            .describe("Server-side execution only: the page of `fileId` to open (default: its first page)."),
     };
 
     shapeId!: string;
@@ -48,6 +58,10 @@ export class ExportShapeArgs {
     filePath?: string;
 
     sessionId?: string;
+
+    fileId?: string;
+
+    pageId?: string;
 }
 
 /**
@@ -152,10 +166,27 @@ export class ExportShapeTool extends Tool<ExportShapeArgs> {
         const asSvg = args.format === "svg";
         const code = `return penpotUtils.exportImage(${shapeCode}, "${args.mode}", ${asSvg});`;
 
-        // execute the code and obtain the image data
-        const task = new ExecuteCodePluginTask({ code: code });
-        const result = await this.mcpServer.pluginBridge.executePluginTask(task, args.sessionId);
-        const imageData = result.data!.result;
+        // execute the code and obtain the image data: in the server-side executor of the session, as
+        // `execute_code` runs it, or in the browser plugin
+        let imageData: any;
+        if (this.usesServerExecution()) {
+            const executed = await this.executeOnServer(
+                { code, fileId: args.fileId, pageId: args.pageId },
+                args.sessionId
+            );
+            imageData = executed.result;
+            const size = ImageContent.byteData(imageData).length;
+            if (!args.filePath && size > this.mcpServer.executorPool!.results.inlineLimit) {
+                // too large to send inline: a download URL instead (03-runtime-contract §5)
+                return new TextResponse(
+                    JSON.stringify(await this.deliverLarge(executed).then((r) => r.result), null, 2)
+                );
+            }
+        } else {
+            const task = new ExecuteCodePluginTask({ code: code });
+            const result = await this.mcpServer.pluginBridge.executePluginTask(task, args.sessionId);
+            imageData = result.data!.result;
+        }
 
         // handle output and return response
         if (!args.filePath) {

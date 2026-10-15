@@ -19,7 +19,7 @@ export interface ObservedScreen {
  * Exports of the frontend `:executor` build (`frontend/src/app/executor/api.cljs`).
  */
 interface ExecutorBundle {
-    boot(options: { token: string; sharedKey: string | null; wasmDir: string }): Promise<{
+    boot(options: { token: string; sharedKey: string | null; wasmDir: string; backendUri: string | null }): Promise<{
         profileId: string;
         sessionId: string;
     }>;
@@ -60,15 +60,17 @@ export class HeadlessEngine {
      * @param wasmDir - directory holding `render-wasm.js` and `render-wasm.wasm`
      * @param token - the user's MCP token
      * @param sharedKey - the MCP shared key, which lets the backend accept that token (D11)
+     * @param backendUri - the backend as reached from here, when it differs from the bundle's public URI
      */
     static async boot(
         bundlePath: string,
         wasmDir: string,
         token: string,
-        sharedKey: string | null
+        sharedKey: string | null,
+        backendUri: string | null
     ): Promise<HeadlessEngine> {
         const bundle = (await import(pathToFileURL(bundlePath).href)) as ExecutorBundle;
-        const { profileId, sessionId } = await bundle.boot({ token, sharedKey, wasmDir });
+        const { profileId, sessionId } = await bundle.boot({ token, sharedKey, wasmDir, backendUri });
         return new HeadlessEngine(bundle, profileId, sessionId);
     }
 

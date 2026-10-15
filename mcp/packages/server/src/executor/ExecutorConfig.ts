@@ -113,10 +113,19 @@ export class ExecutorConfig {
     }
 
     /**
-     * Short, non-reversible fingerprint of a token, for keys and log lines (D9: tokens are never logged).
+     * Short, non-reversible fingerprint of a token, for log lines (D9: tokens are never logged).
      */
     static fingerprint(token: string): string {
-        return createHash("sha256").update(token).digest("hex").slice(0, 12);
+        return ExecutorConfig.ownerKey(token).slice(0, 12);
+    }
+
+    /**
+     * Non-reversible key of a token's user, for what belongs to them: executor sessions, request records,
+     * results and jobs. The whole hash: a key a client could match by trying tokens would hand it another
+     * user's session.
+     */
+    static ownerKey(token: string): string {
+        return createHash("sha256").update(token).digest("hex");
     }
 
     /**

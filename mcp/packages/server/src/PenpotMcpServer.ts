@@ -13,6 +13,7 @@ import { Tool } from "./Tool";
 import { HighLevelOverviewTool } from "./tools/HighLevelOverviewTool";
 import { PenpotApiInfoTool } from "./tools/PenpotApiInfoTool";
 import { ExportShapeTool } from "./tools/ExportShapeTool";
+import { ExecutionJobTool } from "./tools/ExecutionJobTool";
 import { ImportImageTool } from "./tools/ImportImageTool";
 import { CljsReplTool } from "./tools/CljsReplTool";
 import { ImportPenpotFileTool } from "./tools/ImportPenpotFileTool";
@@ -24,6 +25,7 @@ import { ReplServer } from "./ReplServer";
 import { ApiDocs } from "./ApiDocs";
 import { ExecutorConfig } from "./executor/ExecutorConfig";
 import { ExecutorPool } from "./executor/ExecutorPool";
+import { ResultStore } from "./executor/ResultStore";
 import { ServerExecutionGuide } from "./ServerExecutionGuide";
 
 /**
@@ -33,6 +35,8 @@ export interface SessionContext {
     userToken?: string;
     /** whether this request's code runs in a server-side executor instead of the browser plugin */
     serverExecution?: boolean;
+    /** base URL of this server as the client reaches it, for the links given to the client */
+    baseUrl?: string;
 }
 
 /**
@@ -290,6 +294,9 @@ export class PenpotMcpServer {
             new PenpotApiInfoTool(this, this.apiDocs),
             new ExportShapeTool(this),
         ];
+        if (this.executorPool) {
+            toolInstances.push(new ExecutionJobTool(this));
+        }
         if (this.isFileSystemAccessEnabled()) {
             toolInstances.push(new ImportImageTool(this));
         }
@@ -337,7 +344,29 @@ export class PenpotMcpServer {
             this.logger.info(
                 `Received MCP request: method=${req.body?.method ?? "<none>"}; userTokenFp=${PenpotMcpServer.tokenFingerprint(userToken)}; serverExecution=${serverExecution}`
             );
-            await this.sessionContext.run({ userToken, serverExecution }, () => handleMcpRequest(req, res, req.body));
+            const baseUrl = process.env.PENPOT_MCP_PUBLIC_URI ?? `${req.protocol}://${req.get("host")}`;
+            await this.sessionContext.run({ userToken, serverExecution, baseUrl }, () =>
+                handleMcpRequest(req, res, req.body)
+            );
+        });
+
+        // large results of the server-side executor (03-runtime-contract §5), for their owner only
+        this.app.get("/results/:id", async (req, res) => {
+            const pool = this.executorPool;
+            const header = req.get("authorization")?.match(/^Token\s+(.+)$/i)?.[1];
+            const token = header ?? (req.query.userToken as string | undefined);
+            if (!pool || !token) {
+                res.status(404).end();
+                return;
+            }
+            const bytes = await pool.results.get(ExecutorConfig.ownerKey(token), String(req.params.id));
+            if (!bytes) {
+                res.status(404).end();
+                return;
+            }
+            res.setHeader("content-type", ResultStore.sniff(bytes));
+            res.setHeader("cache-control", "no-store");
+            res.end(bytes);
         });
     }
 

@@ -1,5 +1,6 @@
 use super::fixtures::*;
 
+use crate::render::RenderResources;
 use crate::shapes::{
     radius_to_sigma, AlignContent, AlignItems, BlendMode, Blur, BlurType, Fill, FlexDirection,
     ImageFill, ImageFillTransform, JustifyContent, JustifyItems, Shadow, ShadowStyle, SolidColor,
@@ -3647,6 +3648,7 @@ fn raster_png(pool: &ShapesPool, id: Uuid) -> Vec<u8> {
         pool,
         1.0,
         crate::render::raster::RasterFormat::Png,
+        true,
     )
     .expect("raster export");
     bytes
@@ -3713,4 +3715,95 @@ fn raster_export_of_child_paints_inherited_group_fill() {
     let inherited_png = raster_png(&inherited, uid(2));
     assert_eq!(inherited_png, raster_png(&own, uid(2)));
     assert_ne!(inherited_png, raster_png(&bare, uid(2)));
+}
+
+#[test]
+fn raster_image_rect_edges_cover_like_the_workspace() {
+    // An axis-aligned image rect off the pixel grid: the edge pixels must be
+    // covered once (as the workspace renders it), not by an antialiased clip
+    // and the antialiased draw on top of each other.
+    let mut pool = ShapesPool::new();
+    let id = uid(1);
+    let image_rect = uid(2);
+    let corner = uid(3);
+    let image_id = uid(42);
+    add_image_rect(
+        &mut pool,
+        image_rect,
+        id,
+        (0.3, 0.3, 40.3, 20.3),
+        image_id,
+        false,
+        255,
+    );
+    // keeps the export's origin at 0, so the image sits off the pixel grid
+    add_solid_rect(
+        &mut pool,
+        corner,
+        id,
+        (0.0, 0.0, 0.1, 0.1),
+        skia::Color::from_rgb(0, 0, 0),
+    );
+    add_group(
+        &mut pool,
+        id,
+        Uuid::nil(),
+        (0.0, 0.0, 40.3, 20.3),
+        &[image_rect, corner],
+    );
+
+    let mut source = skia::surfaces::raster_n32_premul((8, 4)).expect("surface");
+    source.canvas().clear(skia::Color::from_rgb(0, 144, 128));
+    let png = source
+        .image_snapshot()
+        .encode(None, skia::EncodedImageFormat::PNG, None)
+        .expect("png");
+
+    let _serial = svg_export_test_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut resources = RenderResources::try_new_headless().expect("headless resources");
+    resources
+        .images
+        .add(image_id, false, png.as_bytes())
+        .expect("image");
+    let _guard = crate::globals::TestRenderResourcesGuard::install(&mut resources);
+    let (bytes, width, height) = crate::render::raster::render_to_raster(
+        crate::globals::get_resources(),
+        &id,
+        &pool,
+        1.0,
+        crate::render::raster::RasterFormat::Png,
+        false,
+    )
+    .expect("raster");
+    assert_eq!((width, height), (41, 21));
+
+    let image = skia::Image::from_encoded(skia::Data::new_copy(&bytes)).expect("decode");
+    let info = skia::ImageInfo::new(
+        (width, height),
+        skia::ColorType::RGBA8888,
+        skia::AlphaType::Unpremul,
+        None,
+    );
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    assert!(image.read_pixels(
+        &info,
+        &mut pixels,
+        (width * 4) as usize,
+        (0, 0),
+        skia::image::CachingHint::Allow
+    ));
+    let alpha = |x: i32, y: i32| pixels[((y * width + x) * 4 + 3) as usize] as f32 / 255.0;
+    // the rect covers 0.7 of the first pixel column and 0.3 of the last one
+    assert!(
+        (alpha(0, 10) - 0.7).abs() < 0.05,
+        "left edge {}",
+        alpha(0, 10)
+    );
+    assert!(
+        (alpha(40, 10) - 0.3).abs() < 0.05,
+        "right edge {}",
+        alpha(40, 10)
+    );
 }

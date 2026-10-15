@@ -887,7 +887,42 @@ pub extern "C" fn render_shape_raster(
     let format = RasterFormat::from_u32(format)?;
 
     with_state!(state, {
-        let (data, width, height) = state.render_shape_raster(&id, scale, format)?;
+        let (data, width, height) = state.render_shape_raster(&id, scale, format, true)?;
+
+        let len = data.len() as u32;
+        let mut buf = Vec::with_capacity(12 + data.len());
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&data);
+        Ok(mem::write_bytes(buf))
+    })
+}
+
+/// GPU-free counterpart of `render_shape_pixels`, with its bounds: every
+/// shape, boards included, exports at its extended rect (shadows and blur
+/// included). For a workspace without a GPU (the server-side MCP executor).
+/// Same layout as `render_shape_raster`.
+#[no_mangle]
+#[wasm_error]
+pub extern "C" fn render_shape_raster_extended(
+    a: u32,
+    b: u32,
+    c: u32,
+    d: u32,
+    scale: f32,
+    format: u32,
+) -> Result<*mut u8> {
+    let id = uuid_from_u32_quartet(a, b, c, d);
+
+    if !scale.is_finite() {
+        return Err(Error::CriticalError("Scale is not finite".to_string()));
+    }
+
+    let format = RasterFormat::from_u32(format)?;
+
+    with_state!(state, {
+        let (data, width, height) = state.render_shape_raster(&id, scale, format, false)?;
 
         let len = data.len() as u32;
         let mut buf = Vec::with_capacity(12 + data.len());

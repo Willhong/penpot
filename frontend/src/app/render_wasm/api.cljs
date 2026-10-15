@@ -964,10 +964,34 @@
       (h/call wasm/internal-module "_store_image_from_texture")
       true)))
 
+(defonce ^:private loading-images (atom 0))
+
+(defn wait-images-loaded
+  "Promise resolved once no image is being loaded into WASM, or after
+  `timeout-ms`. Exports wait on it: an image still loading would be missing
+  from the output."
+  [timeout-ms]
+  (p/create
+   (fn [resolve _]
+     (if (zero? @loading-images)
+       (resolve nil)
+       (let [key   (js/Symbol)
+             done  (fn []
+                     (remove-watch loading-images key)
+                     (resolve nil))
+             timer (js/setTimeout done timeout-ms)]
+         (add-watch loading-images key
+                    (fn [_ _ _ n]
+                      (when (zero? n)
+                        (js/clearTimeout timer)
+                        (done)))))))))
+
 (defn- fetch-image
   "Loads an image and hands it to WASM. Raster images are decoded by the
    browser and shared as a WebGL texture; SVG images are sent as raw bytes
-   so Skia rasterizes them."
+   so Skia rasterizes them. Headless (the server-side MCP executor) there is
+   neither a decoder nor WebGL: every image goes as raw bytes for Skia to
+   decode, as the headless exporter does."
   [shape-id image-id thumbnail?]
   (let [url (cf/resolve-file-media {:id image-id} thumbnail?)]
     (store-image-url! image-id url)
@@ -975,12 +999,13 @@
      :thumbnail? thumbnail?
      :callback
      (fn []
+       (swap! loading-images inc)
        (->> (rx/from (-> (js/fetch url)
                          (p/then (fn [^js response] (.blob response)))))
             (rx/mapcat
              (fn [^js blob]
                (rx/from
-                (if (svg-blob? blob)
+                (if (or wasm/headless? (svg-blob? blob))
                   (store-svg-image shape-id image-id thumbnail? blob)
                   (p/then (js/createImageBitmap blob)
                           (partial store-image-texture shape-id image-id thumbnail?))))))
@@ -991,7 +1016,8 @@
                           :thumbnail? thumbnail?
                           :url url
                           :cause cause)
-               (rx/empty)))))}))
+               (rx/empty)))
+            (rx/finalize #(swap! loading-images dec))))}))
 
 (defn- get-fill-images
   [leaf]
@@ -2910,8 +2936,13 @@
   (when (initialized?)
     (let [buffer (uuid/get-u32 shape-id)
 
+          ;; Headless (the server-side MCP executor) there is no GPU surface:
+          ;; the CPU raster export, with the bounds this one uses (shadows
+          ;; outside a board included), same layout.
           offset
-          (h/call wasm/internal-module "_render_shape_pixels"
+          (h/call wasm/internal-module (if wasm/headless?
+                                         "_render_shape_raster_extended"
+                                         "_render_shape_pixels")
                   (aget buffer 0)
                   (aget buffer 1)
                   (aget buffer 2)
