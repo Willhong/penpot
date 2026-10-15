@@ -18,12 +18,14 @@
    [app.main.data.tokenscript :as ts]
    [app.main.data.workspace.shapes :as dwsh]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
+   [app.main.data.workspace.tokens.propagation :as dwtp]
    [app.main.store :as st]
    [app.plugins.api :as api]
    [app.plugins.register :as r]
    [app.plugins.tokens :as ptok]
    [app.plugins.utils :as u]
    [app.util.object :as obj]
+   [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [frontend-tests.helpers.async :as tha]
    [frontend-tests.helpers.mock :as mock]
@@ -897,3 +899,46 @@
         (.addSet catalog #js {"name" "NewSet"})
         (t/is (= 1 (count @errors)))
         (t/is (= [plugin-id :addSet "Plugin doesn't have 'content:write' permission"] (first @errors)))))))
+
+(t/deftest token-theme-proxy-exposes-external-id-as-declared
+  ;; The type declarations name it `externalId`; the proxy only had
+  ;; `external-id` (mcp/docs/server-mcp/01-feature-contract.md).
+  (let [file-id  (uuid/next)
+        theme-id (uuid/next)]
+    (with-redefs [u/locate-token-theme
+                  (fn [_file _theme]
+                    (ctob/make-token-theme :id theme-id
+                                           :name "Theme"
+                                           :external-id "theme-from-import"))]
+      (let [^js theme (ptok/token-theme-proxy "plugin-id" file-id theme-id)]
+        (t/is (= "theme-from-import" (.-externalId theme)))
+        (t/is (= "theme-from-import" (unchecked-get theme "external-id")))))))
+
+(t/deftest token-value-change-propagates-to-the-shapes-using-it
+  ;; Regression: a value set through the plugin API stayed in the library;
+  ;; the shapes the token is applied to kept the old one. The token form
+  ;; propagates after saving, so the setter does too.
+  (let [set-id   (cthi/new-id! :token-set)
+        token-id (cthi/new-id! :color-token)
+        file     (-> (cthf/sample-file :file1 :page-label :page1)
+                     (ctht/add-tokens-lib)
+                     (ctht/update-tokens-lib
+                      #(-> %
+                           (ctob/add-set (ctob/make-token-set :id set-id :name "core"))
+                           (ctob/add-token set-id (ctob/make-token :id token-id
+                                                                   :name "color.primary"
+                                                                   :type :color
+                                                                   :value "#e03131")))))
+        store    (ths/setup-store file)
+        _        (set! st/state store)
+        _        (set! st/stream (ptk/input-stream store))
+        emitted  (atom [])
+        sub      (rx/subs! #(swap! emitted conj (ptk/type %)) st/stream)]
+    (with-redefs [r/check-permission (constantly true)
+                  u/check-editable-tokens (constantly nil)]
+      (let [token (ptok/token-proxy "plugin-id" (:id file) set-id token-id)]
+        (set! (.-value token) "#1c7ed6")
+        (rx/dispose! sub)
+        (t/is (= [::dwtl/update-token ::dwtp/propagate-workspace-tokens]
+                 (filterv #{::dwtl/update-token ::dwtp/propagate-workspace-tokens} @emitted)))))))
+

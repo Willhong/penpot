@@ -19,6 +19,7 @@
    [app.main.data.tokenscript :as ts]
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
+   [app.main.data.workspace.tokens.propagation :as dwtp]
    [app.main.store :as st]
    [app.plugins.register :as r]
    [app.plugins.system-events :as se]
@@ -358,7 +359,9 @@
            (let [token (u/locate-token file-id set-id id)
                  value (normalize-token-value token value)]
              (if (valid-token-candidate? file-id set-id token {:value value})
-               (st/emit! (dwtl/update-token set-id id {:value value}))
+               ;; as the token form does: the shapes using it follow
+               (st/emit! (dwtl/update-token set-id id {:value value})
+                         (dwtp/propagate-workspace-tokens))
                (u/not-valid plugin-id :value value))))))}
 
     :resolvedValue
@@ -605,8 +608,11 @@
                       (get resolved-tokens (:name token))]
 
                   (if resolved-value
+                    ;; as the token form does: a new token can settle a
+                    ;; reference other tokens applied to shapes make
                     (do (st/emit! (-> (dwtl/create-token id token)
-                                      (se/add-event plugin-id)))
+                                      (se/add-event plugin-id))
+                                  (dwtp/propagate-workspace-tokens))
                         (token-proxy plugin-id file-id id (:id token)))
                     (do (u/not-valid plugin-id :addToken (str errors))
                         nil))))))}
@@ -667,6 +673,15 @@
     :id
     {:get #(dm/str id)}
 
+    ;; the name the type declarations give it
+    :externalId
+    {:this true
+     :get
+     (fn [_]
+       (let [theme (u/locate-token-theme file-id id)]
+         (:external-id theme)))}
+
+    ;; kept for the plugins written against it
     :external-id
     {:this true
      :get

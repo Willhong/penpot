@@ -99,6 +99,12 @@
     (when (some? tokens-lib)
       (ctob/get-token tokens-lib set-id token-id))))
 
+(defn current-file?
+  "Whether `file-id` is the file open in the workspace. A library connected to
+  it can be read, but not changed, from there."
+  [file-id]
+  (= file-id (:current-file-id @st/state)))
+
 (defn locate-presence
   [session-id]
   (dm/get-in @st/state [:workspace-presence session-id]))

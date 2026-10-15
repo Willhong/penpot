@@ -70,6 +70,9 @@
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :name "Plugin doesn't have 'library:write' permission")
 
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :name "Cannot modify a library connected to the file: open the library file to change it")
+
          :else
          (let [color (u/proxy->library-color self)
                value (dm/str (d/nilv (:path color) "") " / " value)]
@@ -87,6 +90,9 @@
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :path "Plugin doesn't have 'library:write' permission")
 
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :path "Cannot modify a library connected to the file: open the library file to change it")
+
          :else
          (let [color (-> (u/proxy->library-color self)
                          (update :name #(str value " / " %)))]
@@ -103,6 +109,9 @@
 
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :color "Plugin doesn't have 'library:write' permission")
+
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :color "Cannot modify a library connected to the file: open the library file to change it")
 
          :else
          (let [color (-> (u/proxy->library-color self)
@@ -122,6 +131,9 @@
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :opacity "Plugin doesn't have 'library:write' permission")
 
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :opacity "Cannot modify a library connected to the file: open the library file to change it")
+
          :else
          (let [color (-> (u/proxy->library-color self)
                          (assoc :opacity value))]
@@ -139,6 +151,9 @@
 
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :gradient "Plugin doesn't have 'library:write' permission")
+
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :gradient "Cannot modify a library connected to the file: open the library file to change it")
 
            :else
            (let [color (-> (u/proxy->library-color self)
@@ -159,6 +174,9 @@
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :image "Plugin doesn't have 'library:write' permission")
 
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :image "Cannot modify a library connected to the file: open the library file to change it")
+
            :else
            (let [color (-> (u/proxy->library-color self)
                            (assoc :image value)
@@ -171,6 +189,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :remove "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :remove "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (st/emit! (-> (dwl/delete-color {:id id})
                       (se/add-event plugin-id)))))
@@ -180,6 +201,9 @@
       (cond
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :clone "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :clone "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (let [color-id (uuid/next)
@@ -238,6 +262,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setPluginData "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setPluginData "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (st/emit! (dp/set-plugin-data file-id :color id (keyword "plugin" (str plugin-id)) key value))))
 
@@ -276,6 +303,9 @@
 
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setSharedPluginData "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setSharedPluginData "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (st/emit! (dp/set-plugin-data file-id :color id (keyword "shared" namespace) key value))))
@@ -331,6 +361,9 @@
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :name "Plugin doesn't have 'library:write' permission")
 
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :name "Cannot modify a library connected to the file: open the library file to change it")
+
          :else
          (let [typo (u/proxy->library-typography self)
                value (dm/str (d/nilv (:path typo) "") " / " value)]
@@ -348,6 +381,9 @@
 
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :path "Plugin doesn't have 'library:write' permission")
+
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :path "Cannot modify a library connected to the file: open the library file to change it")
 
          :else
          (let [typo (-> (u/proxy->library-typography self)
@@ -368,6 +404,9 @@
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :fontId "Plugin doesn't have 'library:write' permission")
 
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :fontId "Cannot modify a library connected to the file: open the library file to change it")
+
            :else
            (let [typo (-> (u/proxy->library-typography self)
                           (merge (font-data font variant)))]
@@ -386,6 +425,9 @@
 
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :fontFamily "Plugin doesn't have 'library:write' permission")
+
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :fontFamily "Cannot modify a library connected to the file: open the library file to change it")
 
            :else
            (let [typo (-> (u/proxy->library-typography self)
@@ -407,6 +449,9 @@
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :fontVariantId "Plugin doesn't have 'library:write' permission")
 
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :fontVariantId "Cannot modify a library connected to the file: open the library file to change it")
+
            :else
            (st/emit! (dwl/update-typography (merge typo (variant-data variant)) file-id)))))}
 
@@ -422,6 +467,9 @@
 
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :fontSize "Plugin doesn't have 'library:write' permission")
+
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :fontSize "Cannot modify a library connected to the file: open the library file to change it")
 
            :else
            (let [typo (-> (u/proxy->library-typography self)
@@ -445,6 +493,9 @@
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :fontWeight "Plugin doesn't have 'library:write' permission")
 
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :fontWeight "Cannot modify a library connected to the file: open the library file to change it")
+
            :else
            (st/emit! (dwl/update-typography (merge typo (variant-data variant)) file-id)))))}
 
@@ -465,6 +516,9 @@
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :fontStyle "Plugin doesn't have 'library:write' permission")
 
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :fontStyle "Cannot modify a library connected to the file: open the library file to change it")
+
            :else
            (st/emit! (dwl/update-typography (merge typo (variant-data variant)) file-id)))))}
 
@@ -480,6 +534,9 @@
 
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :lineHeight "Plugin doesn't have 'library:write' permission")
+
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :lineHeight "Cannot modify a library connected to the file: open the library file to change it")
 
            :else
            (let [typo (-> (u/proxy->library-typography self)
@@ -499,6 +556,9 @@
            (not (r/check-permission plugin-id "library:write"))
            (u/not-valid plugin-id :letterSpacing "Plugin doesn't have 'library:write' permission")
 
+           (not (u/current-file? file-id))
+           (u/not-valid plugin-id :letterSpacing "Cannot modify a library connected to the file: open the library file to change it")
+
            :else
            (let [typo (-> (u/proxy->library-typography self)
                           (assoc :letter-spacing value))]
@@ -515,6 +575,9 @@
 
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :textTransform "Plugin doesn't have 'library:write' permission")
+
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :textTransform "Cannot modify a library connected to the file: open the library file to change it")
 
          :else
          (let [typo (-> (u/proxy->library-typography self)
@@ -535,6 +598,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setFont "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setFont "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         ;; When a variant is given read the variant-specific fields from it;
         ;; otherwise the FontProxy exposes the font's default variant fields.
@@ -553,6 +619,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :remove "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :remove "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (st/emit! (-> (dwl/delete-typography id)
                       (se/add-event plugin-id)))))
@@ -562,6 +631,9 @@
       (cond
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :clone "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :clone "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (let [typo-id (uuid/next)
@@ -637,6 +709,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setPluginData "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setPluginData "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (st/emit! (dp/set-plugin-data file-id :typography id (keyword "plugin" (str plugin-id)) key value))))
 
@@ -675,6 +750,9 @@
 
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setSharedPluginData "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setSharedPluginData "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (st/emit! (dp/set-plugin-data file-id :typography id (keyword "shared" namespace) key value))))
@@ -739,6 +817,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :addVariant "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :addVariant "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (st/emit!
          (se/event plugin-id "add-new-variant")
@@ -749,6 +830,9 @@
       (cond
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :addProperty "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :addProperty "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (st/emit!
@@ -765,6 +849,9 @@
 
           (not (r/check-permission plugin-id "library:write"))
           (u/not-valid plugin-id :removeProperty "Plugin doesn't have 'library:write' permission")
+
+          (not (u/current-file? file-id))
+          (u/not-valid plugin-id :removeProperty "Cannot modify a library connected to the file: open the library file to change it")
 
           (not (ctv/can-remove-property? properties))
           (u/not-valid plugin-id :removeProperty "A variant must keep at least one property")
@@ -786,6 +873,9 @@
 
           (not (r/check-permission plugin-id "library:write"))
           (u/not-valid plugin-id :renameProperty "Plugin doesn't have 'library:write' permission")
+
+          (not (u/current-file? file-id))
+          (u/not-valid plugin-id :renameProperty "Cannot modify a library connected to the file: open the library file to change it")
 
           :else
           (st/emit!
@@ -821,6 +911,9 @@
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :name "Plugin doesn't have 'library:write' permission")
 
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :name "Cannot modify a library connected to the file: open the library file to change it")
+
          :else
          (let [component (u/proxy->library-component self)
                value (dm/str (d/nilv (:path component) "") " / " value)]
@@ -838,6 +931,9 @@
          (not (r/check-permission plugin-id "library:write"))
          (u/not-valid plugin-id :path "Plugin doesn't have 'library:write' permission")
 
+         (not (u/current-file? file-id))
+         (u/not-valid plugin-id :path "Cannot modify a library connected to the file: open the library file to change it")
+
          :else
          (let [component (u/proxy->library-component self)
                value (dm/str value " / " (:name component))]
@@ -848,6 +944,9 @@
       (cond
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :remove "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :remove "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (st/emit! (dwl/delete-component {:id id}))))
@@ -889,6 +988,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setPluginData "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setPluginData "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (st/emit! (dp/set-plugin-data file-id :component id (keyword "plugin" (str plugin-id)) key value))))
 
@@ -927,6 +1029,9 @@
 
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setSharedPluginData "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setSharedPluginData "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (st/emit! (dp/set-plugin-data file-id :component id (keyword "shared" namespace) key value))))
@@ -992,6 +1097,9 @@
           (not (r/check-permission plugin-id "library:write"))
           (u/not-valid plugin-id :transformInVariant "Plugin doesn't have 'library:write' permission")
 
+          (not (u/current-file? file-id))
+          (u/not-valid plugin-id :transformInVariant "Cannot modify a library connected to the file: open the library file to change it")
+
           :else
           (st/emit!
            (se/event plugin-id "transform-in-variant")
@@ -1007,6 +1115,9 @@
 
           (not (r/check-permission plugin-id "library:write"))
           (u/not-valid plugin-id :addVariant "Plugin doesn't have 'library:write' permission")
+
+          (not (u/current-file? file-id))
+          (u/not-valid plugin-id :addVariant "Cannot modify a library connected to the file: open the library file to change it")
 
           :else
           (st/emit!
@@ -1025,6 +1136,9 @@
 
           (not (r/check-permission plugin-id "library:write"))
           (u/not-valid plugin-id :setVariantProperty "Plugin doesn't have 'library:write' permission")
+
+          (not (u/current-file? file-id))
+          (u/not-valid plugin-id :setVariantProperty "Cannot modify a library connected to the file: open the library file to change it")
 
           :else
           (st/emit!
@@ -1092,6 +1206,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :createColor "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :createColor "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (let [color-id (uuid/next)]
           (st/emit! (-> (dwl/add-color {:id color-id :name "Color" :color "#000000" :opacity 1} {:rename? false})
@@ -1104,6 +1221,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :createTypography "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :createTypography "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (let [typography-id (uuid/next)]
           (st/emit! (-> (dwl/add-typography (ctt/make-typography {:id typography-id :name "Typography"}) false)
@@ -1115,6 +1235,9 @@
       (cond
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :createComponent "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :createComponent "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (let [id-ref (atom nil)
@@ -1154,6 +1277,9 @@
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setPluginData "Plugin doesn't have 'library:write' permission")
 
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setPluginData "Cannot modify a library connected to the file: open the library file to change it")
+
         :else
         (st/emit! (dp/set-plugin-data file-id :file (keyword "plugin" (str plugin-id)) key value))))
 
@@ -1192,6 +1318,9 @@
 
         (not (r/check-permission plugin-id "library:write"))
         (u/not-valid plugin-id :setSharedPluginData "Plugin doesn't have 'library:write' permission")
+
+        (not (u/current-file? file-id))
+        (u/not-valid plugin-id :setSharedPluginData "Cannot modify a library connected to the file: open the library file to change it")
 
         :else
         (st/emit! (dp/set-plugin-data file-id :file (keyword "shared" namespace) key value))))

@@ -64,6 +64,24 @@
       (t/is (= file-id (get-in @captured [:attrs :typography-ref-file])))
       (t/is (= typography-id (get-in @captured [:attrs :typography-ref-id]))))))
 
+(t/deftest library-color-of-a-connected-library-is-read-only
+  ;; Regression: changing a color of a library connected to the file was
+  ;; dropped without an error; the library can only be changed from itself.
+  (let [library-id (random-uuid)
+        color-id   (random-uuid)
+        proxy      (library/lib-color-proxy plugin-id library-id color-id)
+        errors     (atom [])
+        emitted    (atom 0)]
+    (with-redefs [r/check-permission (constantly true)
+                  st/state (atom {:current-file-id (random-uuid)})
+                  u/not-valid (mock/stub (fn [_ prop msg] (swap! errors conj [prop msg])))
+                  st/emit! (mock/stub (fn [& _] (swap! emitted inc)))]
+      (set! (.-color proxy) "#000000")
+      (set! (.-name proxy) "Renamed")
+      (t/is (= [:color :name] (mapv first @errors)))
+      (t/is (every? #(re-find #"connected to the file" (second %)) @errors))
+      (t/is (zero? @emitted)))))
+
 (t/deftest library-color-gradient-and-image-clear-exclusive-representations
   (let [file-id  (random-uuid)
         color-id (random-uuid)
@@ -76,6 +94,7 @@
                   :gradient {:type :linear}
                   :image {:id (random-uuid) :width 1 :height 1}}]
     (with-redefs [r/check-permission (constantly true)
+                  u/current-file? (constantly true)
                   u/proxy->library-color (constantly base)
                   dwl/update-color-data (fn [color file-id]
                                           (reset! captured {:color color :file-id file-id})

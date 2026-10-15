@@ -28,6 +28,7 @@ import observers
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 UUID_IN_TEXT = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+INST_IN_TEXT = re.compile(r'#inst "[^"]*"')
 
 # attributes that differ between two runs by nature
 VOLATILE = {"id", "modifiedAt", "createdAt"}
@@ -41,7 +42,7 @@ def normalize(value, names):
         return names.get(value, "<id>")
     if isinstance(value, str):
         # ids inside messages (e.g. a refused value echoed in an error)
-        return UUID_IN_TEXT.sub(lambda m: names.get(m.group(0), "<id>"), value)
+        return INST_IN_TEXT.sub("#inst <time>", UUID_IN_TEXT.sub(lambda m: names.get(m.group(0), "<id>"), value))
     if isinstance(value, list):
         return [normalize(v, names) for v in value]
     if isinstance(value, dict):
@@ -113,14 +114,44 @@ def diff(a, b, path=""):
 
 
 class DualRun:
+    # The browser shows messages in its own language when the profile has none; the executor has no
+    # browser language and uses the profile's (English when unset). The tabs of the stack run in Korean.
+    LANGUAGE = "ko"
+
     def __init__(self, space, session=None):
+        profile = mcpv.rpc_ok("get-profile", {}, mcpv.token("editor"))
+        if profile.get("lang") != self.LANGUAGE:
+            mcpv.rpc_ok("update-profile", {"fullname": profile["fullname"], "lang": self.LANGUAGE},
+                        mcpv.token("editor"))
         self.space = space
         self.session = session or f"dual-{time.time_ns()}"
         self.client = mcp_client.Client(mcpv.token("editor", "mcp"), executor="server")
         self.browser = observers.Tabs(space, labels=("p2",))
         self.observer = observers.Tabs(space, labels=("p1",))
 
-    def scenario(self, name, code, compare_saved=True):
+    LIBRARY_STATE = """
+const l = penpot.library.local;
+const byName = (a, b) => (a.name + a.path).localeCompare(b.name + b.path);
+return {
+  colors: l.colors.map((c) => ({ name: c.name, path: c.path, color: c.color, opacity: c.opacity, gradient: c.gradient || null })).sort(byName),
+  typographies: l.typographies.map((t) => ({ name: t.name, path: t.path, fontId: t.fontId, fontFamily: t.fontFamily,
+    fontVariantId: t.fontVariantId, fontSize: t.fontSize, fontWeight: t.fontWeight, fontStyle: t.fontStyle,
+    lineHeight: t.lineHeight, letterSpacing: t.letterSpacing, textTransform: t.textTransform })).sort(byName),
+  components: l.components.map((c) => ({ name: c.name, path: c.path })).sort(byName),
+  sets: l.tokens.sets.map((s) => ({ name: s.name, active: s.active,
+    tokens: s.tokens.map((t) => ({ name: t.name, type: t.type, value: t.value, description: t.description }))
+      .sort((a, b) => a.name.localeCompare(b.name)) })),
+  themes: l.tokens.themes.map((t) => ({ group: t.group, name: t.name, active: t.active, sets: t.activeSets.map((s) => s.name).sort() })),
+};"""
+
+    def library_state(self, file_id):
+        """The file's library assets as a fresh executor session reads them back (get-file does not return
+        them as JSON)."""
+        reader = mcp_client.Client(mcpv.token("editor", "mcp"), executor="server")
+        response, _ = reader.execute_code(self.LIBRARY_STATE, fileId=file_id, sessionId=f"{self.session}-reader")
+        return normalize(response["result"], {})
+
+    def scenario(self, name, code, compare_saved=True, compare_library=False):
         browser_file, browser_page = mcpv.create_file(f"dual-{name}-browser")
         server_file, server_page = mcpv.create_file(f"dual-{name}-server")
         self.browser.open(browser_file, browser_page)
@@ -166,6 +197,12 @@ class DualRun:
             reloaded = self.observer.shape_names("p1", reload=True) == expected
             report["observer"] = {"liveWithoutReload": bool(live), "seconds": live_s, "afterReload": reloaded}
             saved_ok = saved_ok and bool(live) and reloaded
+
+        if compare_library:
+            time.sleep(2)
+            library_diff = diff(self.library_state(browser_file), self.library_state(server_file))
+            report["libraryDiff"] = library_diff
+            saved_ok = saved_ok and not library_diff
 
         report["ok"] = not result_diff and saved_ok
         return report

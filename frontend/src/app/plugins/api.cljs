@@ -205,8 +205,16 @@
 
     :replaceColor
     (fn  [shapes old-color new-color]
-      (let [old-color (parser/parse-color-data old-color)
-            new-color (parser/parse-color-data new-color)]
+      (let [;; A plugin color names its library color `id`/`fileId` (as
+            ;; `shapesColors` returns it); an applied color refers to it as
+            ;; `ref-id`/`ref-file`, the keys the schema and the colors
+            ;; extracted from the shapes use.
+            ->applied (fn [{:keys [id file-id] :as color}]
+                        (cond-> (dissoc color :id :file-id)
+                          (some? id)      (assoc :ref-id id)
+                          (some? file-id) (assoc :ref-file file-id)))
+            old-color (some-> (parser/parse-color-data old-color) ->applied)
+            new-color (some-> (parser/parse-color-data new-color) ->applied)]
         (cond
           (or (not (array? shapes)) (not (every? shape/shape-proxy? shapes)))
           (u/not-valid plugin-id :replaceColor-shapes shapes)

@@ -1211,6 +1211,11 @@
                (rx/map (fn [id]
                          (let [editor (get editor-state id)]
                            (update-text-attrs {:id id :editor editor :attrs attrs})))))
+          ;; The typography changes the texts' geometry: in WASM, measure them
+          ;; again once their fonts are in, as `update-text-range` does.
+          (when (features/active-feature? state "render-wasm/v1")
+            (->> (rx/from (seq ids))
+                 (rx/map dwwt/resize-wasm-text-debounce)))
           (rx/of (dwu/commit-undo-transaction undo-id))))))))
 
 (defn generate-typography-name

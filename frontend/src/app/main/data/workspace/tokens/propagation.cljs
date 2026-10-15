@@ -18,6 +18,7 @@
    [app.main.data.helpers :as dsh]
    [app.main.data.style-dictionary :as sd]
    [app.main.data.tokenscript :as ts]
+   [app.main.data.workspace.reflow :as wrf]
    [app.main.data.workspace.shapes :as dwsh]
    [app.main.data.workspace.thumbnails :as dwt]
    [app.main.data.workspace.tokens.application :as dwta]
@@ -216,6 +217,8 @@
             tokens-status (dsh/lookup-tokens-status state)]
         (when (and tokens-lib tokens-status)
           (when-let [tokens-tree (cfo/get-tokens-in-active-sets tokens-status tokens-lib)]
+            ;; Token values resolve asynchronously: a reflow wait covers them
+            ;; until the shapes are updated.
             (->> (if (contains? cf/flags :tokenscript)
                    (rx/of (-> (ts/resolve-tokens tokens-tree)
                               (d/update-vals #(update % :resolved-value ts/tokenscript-symbols->penpot-unit))))
@@ -236,4 +239,5 @@
                                         (rx/of (dwsh/update-shapes-buffer-stop))
                                         (rx/throw %))))
                        (rx/of (dwsh/update-shapes-buffer-stop))
-                       (rx/of (dwu/commit-undo-transaction undo-id)))))))))))))
+                       (rx/of (dwu/commit-undo-transaction undo-id))))))
+                 (wrf/with-pending :token (some-> (:current-file-id state) vector)))))))))

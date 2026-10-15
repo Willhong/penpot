@@ -33,6 +33,7 @@
    [app.main.router :as rt]
    [app.main.store :as st]
    [app.render-wasm.api :as wasm.api]
+   [app.util.i18n :as i18n]
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]
    [promesa.core :as p]))
@@ -111,10 +112,10 @@
     (when (= uuid/zero (:id profile))
       (throw (ex-info "the token does not identify a user"
                       {:type :executor :code :forbidden})))
-    ;; `dp/set-profile` would also load UI translations and the plugin
-    ;; registry, which the executor has no use for. The backend does not
-    ;; notify a connection of its own session's changes, so the executor
-    ;; never shares a browser tab's id.
+    ;; `dp/set-profile` would also load the plugin registry, which the
+    ;; executor has no use for. The backend does not notify a connection of
+    ;; its own session's changes, so the executor never shares a browser
+    ;; tab's id.
     (st/emit! #(assoc % :session-id cf/session-id)
               #(assoc % :profile-id (:id profile) :profile profile)
               ;; The server always computes with render-wasm (D10), whatever
@@ -125,11 +126,18 @@
               ;; as `app.main` does once the profile is known: other
               ;; sessions' changes reach the open file through it
               (dws/initialize))
-    ;; The browser lands on the default team's dashboard: `penpotMgmt` calls
-    ;; made before opening a file need that team and its features.
-    (p/do (emit-and-wait! ::dtm/team-initialized
-                          (dtm/initialize-team (:default-team-id profile)))
-          profile)))
+    (p/do
+      ;; Messages, validation errors included, in the profile's language as
+      ;; the browser shows them; English when the profile has none (there is
+      ;; no browser language to detect). English is loaded first, as
+      ;; `i18n/init` does, for the keys a language lacks.
+      (i18n/set-locale cf/default-language)
+      (i18n/set-locale (or (:lang profile) cf/default-language))
+      ;; The browser lands on the default team's dashboard: `penpotMgmt`
+      ;; calls made before opening a file need that team and its features.
+      (emit-and-wait! ::dtm/team-initialized
+                      (dtm/initialize-team (:default-team-id profile)))
+      profile)))
 
 ;; --- WORKSPACE
 
