@@ -18,7 +18,8 @@
    [app.common.files.changes-builder :as pcb]
    [app.common.files.helpers :as cfh]
    [app.common.math :as mth]
-   [app.main.features :as features]))
+   [app.main.features :as features]
+   [clojure.walk :as walk]))
 
 ;; If anything a translation can mutate is added here, drop the
 ;; `(when-not translation? …)` guard in `update-shapes`.
@@ -54,6 +55,15 @@
        (or (nil? attrs)
            (some attr? attrs))))
 
+;; Text node attrs that only paint: changing them keeps the layout.
+(def ^:private text-paint-attrs
+  [:fills :fill-color :fill-opacity :fill-color-gradient :fill-color-ref-id :fill-color-ref-file])
+
+(defn- text-layout-content
+  "`content` without the attrs that only paint its text."
+  [content]
+  (walk/postwalk #(if (map? %) (apply dissoc % text-paint-attrs) %) content))
+
 (defn- text-reflow-changed?
   [state shape changed-shape changed]
   ;; Match the DOM renderer's geometry checks.
@@ -62,10 +72,15 @@
     (some
      (fn [attr]
        (and (reflow-attr? attr)
-            (or wasm?
-                (not (dom-text-geometry-reflow-attr? attr))
-                (not (mth/close? (get shape attr)
-                                 (get changed-shape attr))))))
+            (if wasm?
+              ;; wasm only re-measures a text whose layout may change: a
+              ;; signal for a new fill would leave a wait nothing ends
+              (or (not= :content attr)
+                  (not= (text-layout-content (:content shape))
+                        (text-layout-content (:content changed-shape))))
+              (or (not (dom-text-geometry-reflow-attr? attr))
+                  (not (mth/close? (get shape attr)
+                                   (get changed-shape attr)))))))
      changed)))
 
 (defn- async-text-reflow?
