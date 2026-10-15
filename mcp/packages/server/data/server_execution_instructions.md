@@ -33,6 +33,12 @@ Where this section differs from the rest of the overview, this section applies.
   read or cancel it with the `execution_job` tool.
 * Comments (`addCommentThread`, `reply`, `resolved`, `remove`) are written at once, as in a browser: an error later
   in the same call does not undo them. Open screens show them without a reload.
+* Each `execute_code` call is saved as one step, or not at all when it fails or is cancelled. The `undo` tool
+  reverts the last saved call of the session (`redo: true` applies it again). It refuses with `precondition-failed`,
+  saving nothing, when someone else has changed what it would revert since: tell the user rather than retrying.
+  Comments and actions outside the file are not undone.
+* Give a `requestId` to calls that change things. If an answer is lost (a dropped connection, a restart of this
+  server), retry with the same `requestId`, or ask `request_status` first: it never applies a call twice.
 * Error codes: `ui-only` (needs a browser), `forbidden`, `not-found` (also for a file you may only view),
   `validation` (invalid value), `precondition-failed`, `revn-conflict`, `vern-conflict`, `cancelled`,
   `resource-limit` (120 s or memory exceeded), `execution-error` (your code threw), `engine-error`.

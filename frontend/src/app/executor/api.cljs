@@ -19,6 +19,7 @@
    [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.executor.auth :as auth]
+   [app.executor.history :as history]
    [app.executor.session :as session]
    [app.executor.wasm :as ewasm]
    [app.main.data.changes :as dch]
@@ -188,9 +189,13 @@
                      (rx/filter dch/commit?)
                      (rx/map deref)
                      (rx/filter #(= :local (:source %)))
-                     (rx/subs! (fn [{:keys [redo-changes]}]
-                                 (swap! execution update :changed
-                                        into (mapcat change-ids) redo-changes))))
+                     (rx/subs! (fn [{:keys [redo-changes save-undo?] :as commit}]
+                                 (swap! execution
+                                        (fn [state]
+                                          (cond-> (update state :changed into (mapcat change-ids) redo-changes)
+                                            ;; what a browser would keep for undo (PEN-20)
+                                            save-undo?
+                                            (update :commits conj (select-keys commit [:redo-changes :undo-changes]))))))))
         saves   (->> st/stream
                      (rx/filter (ptk/type? ::dps/commit-persisted))
                      (rx/subs! (fn [_] (swap! execution update :saves inc))))
@@ -211,6 +216,7 @@
                        :precondition (some-> opts .-ifUnchangedSinceRevn)
                        :revn-before (some-> file-id file-revn)
                        :changed #{}
+                       :commits []
                        :saves 0
                        :refused 0
                        :subs [sub saves refused reload]})
@@ -289,7 +295,11 @@
                 saves     (:saves state)
                 revn      (if (pos? saves) (inc answered) answered)
                 _         (when (and file-id (pos? saves))
-                            (swap! saved-revn assoc file-id revn))
+                            (swap! saved-revn assoc file-id revn)
+                            (if-let [direction (:history state)]
+                              (history/moved! direction file-id revn)
+                              (history/record! file-id (:commits state) revn
+                                               (:vern (dsh/lookup-file @st/state file-id)))))
                 changed   (disj (:changed state) uuid/zero)]
           #js {:saved (pos? saves)
                :fileId (some-> file-id str)
@@ -307,6 +317,35 @@
         (p/catch (fn [cause]
                    (end-execution!)
                    (p/rejected (contract-error cause)))))))
+
+(defn ^:export applyHistory
+  "Within an execution, undoes (`\"undo\"`) or redoes (`\"redo\"`) the
+  last saved execution of this executor session in the open file
+  (`app.executor.history`). `finishExecution` saves it. Rejects with
+  `precondition-failed` when another session changed what it would revert,
+  `not-found` when there is nothing to undo or redo. Resolves to the number
+  of changes applied."
+  [direction]
+  (let [direction (keyword direction)
+        file-id   (current-file-id)]
+    (with-contract-errors
+      (p/let [{:keys [changes latest]} (history/prepare direction file-id (:session-id @st/state))]
+        ;; saved only if nobody saved past the revn checked above meanwhile
+        (swap! execution update :precondition #(if (some? %) (min % latest) latest))
+        (swap! execution assoc :history direction)
+        (st/emit! (dch/commit-changes {:redo-changes changes
+                                       :undo-changes []
+                                       :save-undo? false
+                                       :origin (ptk/data-event ::apply-history {:direction direction})
+                                       :file-id file-id}))
+        (count changes)))))
+
+(defn ^:export historyStatus
+  "Number of saved executions of this executor session that can be undone
+  and redone in the open file."
+  []
+  (let [{:keys [undo redo]} (history/counts (current-file-id))]
+    #js {:undo undo :redo redo}))
 
 (defn ^:export abortExecution
   "Saves nothing of the execution in progress and reloads the file."

@@ -348,18 +348,29 @@ return 1;""", fileId=self.file_id)
             thread.join()
             after = backend_state(self.file_id)
             self.ai = mcp_client.Client(mcpv.token("editor", "mcp"), executor="server")
-            try:
-                retry = self.ai_run(code % name, requestId=request_id, fileId=self.file_id)
-                retry = {"ran": True, "replayed": retry.get("replayed")}
-            except mcp_client.ToolError as error:
-                retry = {"ran": False, "error": str(error)[:220]}
+
+            def retry_once():
+                try:
+                    answer = self.ai_run(code % name, requestId=request_id, fileId=self.file_id)
+                    return {"ran": True, "replayed": answer.get("replayed")}
+                except mcp_client.ToolError as error:
+                    return {"ran": False, "error": str(error)[:220]}
+
+            retry = retry_once()
+            if mode == "crash":
+                # PEN-20: the crashed instance counts as running it until it misses its heartbeats (15 s);
+                # then its run, which had not started saving, is known to have saved nothing and runs again
+                early = retry
+                time.sleep(16)
+                retry = {**retry_once(), "early": early}
             final = backend_state(self.file_id)
             report[mode] = {"firstAttempt": errors, "nothingSavedByIt": name not in after[2] and before[0] == after[0],
                             "retry": retry, "copies": list(final[2]).count(name)}
         ok = (report["graceful"]["nothingSavedByIt"] and report["graceful"]["retry"]["ran"]
               and report["graceful"]["copies"] == 1
-              and report["crash"]["nothingSavedByIt"] and not report["crash"]["retry"]["ran"]
-              and "precondition-failed" in report["crash"]["retry"]["error"] and report["crash"]["copies"] == 0)
+              and report["crash"]["nothingSavedByIt"] and report["crash"]["retry"]["ran"]
+              and "still running" in report["crash"]["retry"]["early"].get("error", "")
+              and report["crash"]["copies"] == 1)
         self.check("restartInFlight", ok, **report)
 
 

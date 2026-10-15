@@ -4,10 +4,12 @@ import { ExecutorError } from "./ExecutorError";
 import type {
     ExecuteParams,
     ExecutionResult,
+    ExecutorAck,
     ExecutorNotice,
     ExecutorRequest,
     ExecutorResponse,
     ExecutorStatus,
+    SaveInfo,
 } from "./ExecutorProtocol";
 import type { ExecutorConfig } from "./ExecutorConfig";
 
@@ -34,7 +36,7 @@ export class ExecutorProcess {
     /** whether the execution in progress has started saving */
     private saving = false;
     /** told when the execution in progress starts saving */
-    private onSaving: (() => void) | undefined;
+    private onSaving: ((save?: SaveInfo) => void | Promise<void>) | undefined;
     private readonly exitedPromise: Promise<void>;
 
     /** time of the last request, for idle eviction */
@@ -71,7 +73,7 @@ export class ExecutorProcess {
             serialization: "advanced",
         });
         this.child.on("message", (message: ExecutorResponse | ExecutorNotice) =>
-            "notice" in message ? this.savingStarted() : this.onResponse(message)
+            "notice" in message ? this.savingStarted(message.save) : this.onResponse(message)
         );
         // "close" comes after the IPC messages the process sent before it ended, such as a saving notice
         this.exitedPromise = new Promise((resolve) =>
@@ -110,7 +112,7 @@ export class ExecutorProcess {
         params: ExecuteParams,
         timeoutMs: number,
         signal?: AbortSignal,
-        onSaving?: () => void
+        onSaving?: (save?: SaveInfo) => void | Promise<void>
     ): Promise<ExecutionResult> {
         this.saving = false;
         this.onSaving = onSaving;
@@ -122,9 +124,16 @@ export class ExecutorProcess {
         }
     }
 
-    private savingStarted(): void {
+    private savingStarted(save?: SaveInfo): void {
         this.saving = true;
-        this.onSaving?.();
+        // the executor sends the save once this is recorded
+        Promise.resolve(this.onSaving?.(save))
+            .catch((error) => this.logger.warn("cannot record the save: %s", error))
+            .finally(() => {
+                if (this.child.connected) {
+                    this.child.send({ ack: "saving" } satisfies ExecutorAck);
+                }
+            });
     }
 
     /**

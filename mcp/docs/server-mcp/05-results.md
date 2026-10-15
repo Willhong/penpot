@@ -79,7 +79,7 @@ editor가 MCP token과 `?executor=server`로 `execute_code`를 부른다. 브라
 | 두 세션에서 저장 50회 연속(E8) | 놓친 알림 없이 네 곳 모두 같음 |
 | 실행 중 편집 권한 회수 | `not-found`, 변경 없음. 권한을 되돌리면 다음 실행은 저장 |
 | 실행 중 MCP 서버 정상 종료(서버 프로세스에 SIGTERM, 배포 환경의 컨테이너 종료와 같음) | `cancelled`, 저장 없음. 같은 `requestId` 재시도는 한 번 실행 |
-| 실행 중 MCP 서버 강제 종료(SIGKILL) | 저장 없음. 같은 `requestId` 재시도는 결과를 알 수 없다며 `precondition-failed`(중복 위험 대신 거부) |
+| 실행 중 MCP 서버 강제 종료(SIGKILL) | 저장 없음. 바로 재시도하면 아직 실행 중이라며 `precondition-failed`, 죽은 인스턴스의 생존 기록이 끝난 뒤(15초) 재시도하면 한 번 실행(PEN-20에서 바뀜. 전에는 결과를 모른다며 계속 거부) |
 | 실행기 부팅 중 MCP 서버 정상 종료(`pen6_shutdown.py`, 3회) | `cancelled`, 저장 없음. 재시도는 한 번 실행 |
 | 도형 1500개 저장을 실행 시간의 60·75·90·97% 시점에 정상 종료(`pen6_shutdown.py`) | 답이 실제 저장과 항상 일치: "저장 없음"이면 backend에도 없고 재시도가 한 번 실행. 응답이 끊기면 재시도를 거부하고 두 벌이 생기지 않음 |
 
@@ -286,4 +286,27 @@ upstream 참고: upstream develop의 컴포넌트 관리 API(#12303)는 이 브�
 - **backend 자산 경로(`/assets`)가 MCP 공유 키를 몰라** 실행기가 이미지·폰트를 받지 못했다(401). 다른 경로처럼 공유 키를 확인한다.
 
 결정(사용자, 03 D14·D15): exporter 서비스 대신 실행기 안에서 그린다. 그래서 exporter token 인증(E10)은 만들지 않았다. 래스터는 브라우저 CPU 경로와 비교한다.
+
+## PEN-20 작업 단위·실패·실행 취소 (2026-10-15, `experiments/pen20_history.py`)
+
+AI는 editor의 MCP 호출, 사람은 owner 탭(파일을 연 브라우저)이다.
+
+| 확인 | 결과 |
+|---|---|
+| 실행 두 번(Flex 보드·텍스트·사각형·패스·컴포넌트를 만들고, 다음 실행이 색·크기·글자·위치·이름을 바꿈) 뒤 `undo` 두 번, `redo` 두 번 | 저장된 도형 전체(모든 속성)가 각 단계 전 상태와 같음. owner 탭은 새로고침 없이 0.5초 안에 같은 상태. 더 되돌릴 것이 없으면 `not-found` |
+| owner가 다른 도형을 옮긴 뒤 AI가 `undo` | 되돌려지고 owner가 옮긴 위치는 그대로 |
+| AI가 바꾼 도형을 owner가 다시 바꾼 뒤 AI가 `undo` | `precondition-failed`, 메시지에 그 도형('box') 이름, 저장 없음(revn·도형 그대로) |
+| owner 탭의 실행 취소(Ctrl+Z와 같은 이벤트) | AI가 바꾼 것은 되돌리지 않음. owner 자신의 마지막 변경만 되돌림 |
+| 도형 3개를 만든 뒤 예외를 던진 실행, 실행 중 취소한 job, 사전 조건에 걸린 실행 | 셋 다 저장 없음(revn·도형 그대로). 실행 취소 단계도 그대로 |
+| `undoBlockBegin/Finish`로 묶은 블록과 닫지 않은 블록이 든 실행 | `undo` 한 번에 실행 전체가 되돌려짐 |
+| 같은 `requestId` 두 번(실행, `undo`) | 한 번만 적용, 두 번째는 `replayed` |
+| 코드 실행 중 MCP 서버 강제 종료 | `request_status`는 `interrupted`, `saved: false`. 같은 `requestId` 재시도가 한 번 실행 |
+| 저장은 됐는데 응답 전에 인스턴스가 사라진 요청(죽은 인스턴스가 남긴 기록을 그대로 만들어 시험) | `request_status`는 `saved: true`와 그 revn. 재시도는 다시 적용하지 않고 그 commit(`result-lost` 경고)을 돌려줌 |
+| 텍스트 400개 저장 중(`progress: saving`) MCP 서버 강제 종료 | 35초 뒤 `request_status`가 파일과 일치(이번 시험에서는 저장 전 계산 중에 끊겨 `saved: false`, 도형 0개) |
+
+구현:
+- 실행 1회 = 실행 취소 1단계(01 §3). 실행기가 저장한 실행마다 브라우저의 실행 취소와 같은 undo 변경을 모아 둔다(`app.executor.history`, 파일별 50개, 세션이 살아 있는 동안). `undo` 도구가 그것을 실행처럼 저장한다.
+- 다른 사람의 변경과 겹치는지는 backend의 변경 기록(`get-file-changes`, PEN-6에서 추가)에서 다른 세션의 변경이 닿은 대상과 비교한다. 겹치면 거부한다(D6: 저장 뒤 원복이 사람의 변경과 부딪히지 않게).
+- 결과를 모르는 요청(PEN-6에서 거부만 하던 것): 실행기는 저장 전에 저장 단서(파일, 저장 전 revn, 실행기 세션)를 MCP server에 알리고 기록되기를 기다린다. 재시작 뒤 같은 `requestId`나 `request_status`는 backend 기록으로 저장 여부를 알아낸다(04 §3).
+- 브라우저의 실행 취소는 원래 다른 세션의 변경을 넣지 않는다(`:save-undo? false`로 들어옴). 시험으로 확인만 했다.
 

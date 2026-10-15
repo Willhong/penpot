@@ -97,6 +97,11 @@ export interface ExecuteParams {
      * since the client read it; `precondition-failed` otherwise.
      */
     ifUnchangedSinceRevn?: number;
+    /**
+     * Instead of running `code`: undo or redo the last saved execution of this session in the file (PEN-20).
+     * Refused with `precondition-failed` when another session changed what it would revert since.
+     */
+    history?: "undo" | "redo";
 }
 
 /**
@@ -124,7 +129,24 @@ export type ExecutorRequest =
  * Notice sent by an executor process outside any response: the execution in progress starts saving, so
  * from then on its process must not be ended as if nothing was saved.
  */
-export type ExecutorNotice = { notice: "saving" };
+export type ExecutorNotice = { notice: "saving"; save?: SaveInfo };
+
+/**
+ * The MCP server's answer to a saving notice: the save is recorded (its request ID's ledger entry knows how to
+ * find it), so the executor may send it.
+ */
+export type ExecutorAck = { ack: "saving" };
+
+/**
+ * What identifies a save in the backend's record of file changes: the file, its revn before the save, and the
+ * executor's session, which the backend records with each change. Lets the outcome of a save whose answer
+ * was lost (a restart) be found out afterwards.
+ */
+export interface SaveInfo {
+    fileId: string;
+    revnBefore: number;
+    sessionId: string;
+}
 
 /**
  * Response sent by an executor process, correlated by request ID.

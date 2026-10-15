@@ -16,6 +16,7 @@ import { ExecutorError } from "../ExecutorError";
 import type {
     ExecutorErrorCode,
     ExecutorErrorData,
+    ExecutorAck,
     ExecutorNotice,
     ExecutorRequest,
     ExecutorResponse,
@@ -42,12 +43,26 @@ const runtime = new ExecutorRuntime(
         uiUri: requireEnv("PENPOT_PUBLIC_URI"),
         backendUri: process.env.PENPOT_EXECUTOR_BACKEND_URI ?? null,
     },
-    // sent before the save request leaves, so the server never takes an ended save for "nothing saved"
-    () => {
+    // sent, and acknowledged, before the save request leaves, so the server never takes an ended save for
+    // "nothing saved" and has recorded how to find the save out after a restart
+    (save) => {
         holdStopSignals();
-        return new Promise((resolve) => process.send!({ notice: "saving" } satisfies ExecutorNotice, () => resolve()));
+        return new Promise((resolve) => {
+            const timer = setTimeout(done, SAVING_ACK_TIMEOUT_MS);
+            function done() {
+                clearTimeout(timer);
+                savingAck = null;
+                resolve();
+            }
+            savingAck = done;
+            process.send!({ notice: "saving", ...(save ? { save } : {}) } satisfies ExecutorNotice);
+        });
     }
 );
+
+/** how long a save waits for the server to record it; it goes ahead after that */
+const SAVING_ACK_TIMEOUT_MS = 10_000;
+let savingAck: (() => void) | null = null;
 
 function requireEnv(name: string): string {
     const value = process.env[name];
@@ -110,7 +125,11 @@ async function handle(request: ExecutorRequest): Promise<unknown> {
     }
 }
 
-process.on("message", (request: ExecutorRequest) => {
+process.on("message", (request: ExecutorRequest | ExecutorAck) => {
+    if ("ack" in request) {
+        savingAck?.();
+        return;
+    }
     handle(request)
         .then(
             (value) => reply({ id: request.id, ok: true, value }),

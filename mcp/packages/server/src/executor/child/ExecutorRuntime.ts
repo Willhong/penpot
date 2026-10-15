@@ -2,7 +2,7 @@
 import { ExecuteCodeTaskConsole } from "@penpot/mcp-plugin/console";
 import { PenpotUtils } from "@penpot/mcp-plugin/utils";
 import { ExecutorError } from "../ExecutorError";
-import type { ExecuteParams, ExecutionResult, ExecutorStatus } from "../ExecutorProtocol";
+import type { ExecuteParams, ExecutionResult, ExecutorStatus, SaveInfo } from "../ExecutorProtocol";
 import { HeadlessEngine } from "./HeadlessEngine";
 import { Sandbox, hardenProcessIntrinsics } from "./Sandbox";
 import { createServerContext } from "./ServerContext";
@@ -54,11 +54,12 @@ export class ExecutorRuntime {
 
     /**
      * @param config - settings of the process
-     * @param onSaving - tells the MCP server that the execution starts saving; resolves once it is sent
+     * @param onSaving - tells the MCP server that the execution starts saving, and what identifies the save;
+     *   resolves once it is sent
      */
     constructor(
         private readonly config: ExecutorRuntimeConfig,
-        private readonly onSaving: () => Promise<void> = async () => undefined
+        private readonly onSaving: (save: SaveInfo | null) => Promise<void> = async () => undefined
     ) {}
 
     /**
@@ -151,13 +152,15 @@ export class ExecutorRuntime {
         this.engine.beginExecution(params.ifUnchangedSinceRevn);
         let result: unknown;
         try {
-            result = await this.sandbox.run(params.code, {
-                penpot: this.api.penpot,
-                penpotMgmt: this.api.penpotMgmt,
-                penpotUtils: PenpotUtils,
-                storage: this.storage,
-                console,
-            });
+            result = params.history
+                ? { [params.history === "undo" ? "undone" : "redone"]: await this.engine.applyHistory(params.history) }
+                : await this.sandbox.run(params.code, {
+                      penpot: this.api.penpot,
+                      penpotMgmt: this.api.penpotMgmt,
+                      penpotUtils: PenpotUtils,
+                      storage: this.storage,
+                      console,
+                  });
         } catch (error) {
             await this.engine.abortExecution();
             throw this.executionError(error);
@@ -170,7 +173,12 @@ export class ExecutorRuntime {
             throw new ExecutorError("cancelled", "the execution was cancelled before its save");
         }
         this.phase = "saving";
-        await this.onSaving();
+        const status = this.status();
+        await this.onSaving(
+            status.fileId !== null && status.revn !== null
+                ? { fileId: status.fileId, revnBefore: status.revn, sessionId: status.sessionId }
+                : null
+        );
         let commit;
         try {
             commit = await this.engine.finishExecution(params.settleTimeoutMs ?? this.config.settleTimeoutMs);
@@ -178,6 +186,11 @@ export class ExecutorRuntime {
             // the save was refused or failed: drop the local edits so the session matches the backend
             await this.engine.abortExecution().catch(() => undefined);
             throw this.executionError(error);
+        }
+        if (params.history) {
+            // what is left to undo and redo, for the client to tell the user
+            const left = this.engine.historyStatus();
+            result = { ...(result as object), canUndo: left.undo, canRedo: left.redo };
         }
         return {
             result: ExecutorRuntime.toJson(result),

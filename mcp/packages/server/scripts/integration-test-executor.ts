@@ -193,10 +193,12 @@ async function main(): Promise<void> {
         { loop, loopNext, revn: [loopBefore.revn, loopAfter.revn] }
     );
 
-    // derived values that do not finish within the settle bound: resource-limit, nothing saved
+    // derived values that do not finish within the settle bound: resource-limit, nothing saved (the text
+    // waits for a font variant this session has not downloaded yet, which outlasts the 1 ms bound)
     const settleBefore = await fileState(editorFile);
     const layoutCode =
         "const b = penpot.createBoard(); b.name = 'settle-board'; const f = b.addFlexLayout(); f.wrap = 'wrap';" +
+        " const t = penpot.createText('Settle'); t.fontWeight = '700'; t.fontStyle = 'italic'; f.appendChild(t);" +
         " for (let i = 0; i < 200; i++) { const r = penpot.createRectangle(); r.name = 'settle-rect'; f.appendChild(r); }" +
         " return 1;";
     const unsettled = await outcome(() =>

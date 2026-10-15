@@ -164,7 +164,7 @@ PEN-19에서 정한 예외(2026-10-15):
 | `forbidden` | token이 없거나 만료·폐기됨 | 없음 |
 | `validation` | 입력 또는 변경이 스키마·파일 검증을 통과하지 못함 | 없음 |
 | `revn-conflict` / `vern-conflict` | backend 충돌 (버전 복원 등) | 없음. 다시 읽은 뒤 재시도 가능 |
-| `precondition-failed` | D4의 선택적 사전 조건 위반 | 없음 |
+| `precondition-failed` | D4의 선택적 사전 조건 위반. 실행 취소가 다른 사람의 변경을 되돌리게 될 때, 같은 `requestId`가 아직 실행 중이거나 결과를 알 수 없을 때(PEN-20) | 없음 |
 | `ui-only` | D8에서 (c)로 정한 member, 또는 (f) member를 'AI 따라가기'를 켠 탭 없이 호출했을 때 | 없음 |
 | `resource-limit` | §2 제한 초과 | 없음 |
 | `cancelled` | 저장 전 취소 | 없음 |
@@ -193,7 +193,7 @@ PEN-19에서 정한 예외(2026-10-15):
 | PEN-24 | mcp server 연결, frontend 따라가기 UI, 화면 이동 신호 | D8 (f) 규칙, 지연 D7 | PEN-4, PEN-10 |
 | PEN-18 | comments RPC | 알림은 backend가 보냄 | PEN-10 |
 | PEN-19 | Engine(render-wasm CPU 출력), code-gen | §5, D14, D15 | E7 |
-| PEN-20 | DocumentSession undo stack | 실행 1회 = undo 1단위, 실패 시 저장 없음 | PEN-10 |
+| PEN-20 | 실행기 세션의 undo stack(`app.executor.history`), `undo`·`request_status` 도구 | 실행 1회 = undo 1단위, 실패 시 저장 없음, 다른 사람 변경과 겹치면 거부 | PEN-10 |
 
 ## 9. 병렬 구현·독립 시험 방법
 

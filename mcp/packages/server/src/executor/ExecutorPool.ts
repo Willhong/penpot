@@ -1,10 +1,16 @@
 import { createLogger } from "../logger";
 import { ExecutorConfig } from "./ExecutorConfig";
 import { ExecutorError } from "./ExecutorError";
-import type { ExecuteParams, ExecutionResult } from "./ExecutorProtocol";
+import type { ExecuteParams, ExecutionResult, SaveInfo } from "./ExecutorProtocol";
 import { ExecutorProcess } from "./ExecutorProcess";
 import { ExecutionJobs, type JobReporter } from "./ExecutionJobs";
-import { MemoryLedgerStore, RedisLedgerStore, RequestLedger } from "./RequestLedger";
+import {
+    MemoryLedgerStore,
+    RedisLedgerStore,
+    RequestLedger,
+    type RequestStatus,
+    type SaveOutcome,
+} from "./RequestLedger";
 import { MemoryResultBackend, RedisResultBackend, ResultStore } from "./ResultStore";
 
 /**
@@ -123,8 +129,11 @@ export class ExecutorPool {
         progress?: JobReporter
     ): Promise<ExecutionResult> {
         const execution = requestId
-            ? this.ledger.once(ExecutorConfig.ownerKey(token), requestId, () =>
-                  this.enqueue(token, sessionName, params, signal, progress)
+            ? this.ledger.once(
+                  ExecutorConfig.ownerKey(token),
+                  requestId,
+                  (recordSave) => this.enqueue(token, sessionName, params, signal, progress, recordSave),
+                  (save) => this.probeSave(token, save)
               )
             : this.enqueue(token, sessionName, params, signal, progress);
         this.inProgress.add(execution);
@@ -135,12 +144,53 @@ export class ExecutorPool {
         return execution;
     }
 
+    /**
+     * Where a request ID of the user of `token` stands (D5, PEN-20): unknown, running, done with its result,
+     * or interrupted by a restart, with whether its save went through.
+     */
+    requestStatus(token: string, requestId: string): Promise<RequestStatus> {
+        return this.ledger.status(ExecutorConfig.ownerKey(token), requestId, (save) => this.probeSave(token, save));
+    }
+
+    /**
+     * Whether a save of an executor session went through, from the backend's record of the file's changes:
+     * a change saved by that session after the revn it started from.
+     */
+    private async probeSave(token: string, save: SaveInfo): Promise<SaveOutcome> {
+        const response = await fetch(`${this.config.publicUri.replace(/\/+$/, "")}/api/main/methods/get-file-changes`, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                accept: "application/json",
+                authorization: `Token ${token}`,
+                ...(this.config.sharedKey ? { "x-shared-key": `mcp ${this.config.sharedKey}` } : {}),
+            },
+            body: JSON.stringify({ fileId: save.fileId, sinceRevn: save.revnBefore }),
+            signal: AbortSignal.timeout(15_000),
+        });
+        if (!response.ok) {
+            return { saved: "unknown", reason: `the backend answered ${response.status}` };
+        }
+        const answer = (await response.json()) as {
+            complete: boolean;
+            changes: { revn: number; sessionId: string }[];
+        };
+        const own = answer.changes.find((change) => change.sessionId === save.sessionId);
+        if (own) {
+            return { saved: true, revn: own.revn };
+        }
+        return answer.complete
+            ? { saved: false }
+            : { saved: "unknown", reason: "the backend no longer keeps the changes of that time" };
+    }
+
     private enqueue(
         token: string,
         sessionName: string,
         params: ExecuteParams,
         signal?: AbortSignal,
-        progress?: JobReporter
+        progress?: JobReporter,
+        recordSave?: (save: SaveInfo) => Promise<void>
     ): Promise<ExecutionResult> {
         const userKey = ExecutorConfig.ownerKey(token);
         const key = `${userKey}:${sessionName}`;
@@ -155,7 +205,7 @@ export class ExecutorPool {
             this.sessions.set(key, session);
         }
         const target = session;
-        return target.enqueue(() => this.run(target, token, params, signal, progress));
+        return target.enqueue(() => this.run(target, token, params, signal, progress, recordSave));
     }
 
     private async run(
@@ -163,7 +213,8 @@ export class ExecutorPool {
         token: string,
         params: ExecuteParams,
         signal?: AbortSignal,
-        progress?: JobReporter
+        progress?: JobReporter,
+        recordSave?: (save: SaveInfo) => Promise<void>
     ): Promise<ExecutionResult> {
         if (this.closing) {
             // queued behind an execution the shutdown cancelled: do not start another process
@@ -180,7 +231,12 @@ export class ExecutorPool {
             }
             progress?.started();
             const process = await session.getProcess(this.config, token);
-            result = await process.execute(params, this.config.timeoutMs, signal, () => progress?.saving());
+            result = await process.execute(params, this.config.timeoutMs, signal, async (save) => {
+                progress?.saving();
+                if (save) {
+                    await recordSave?.(save);
+                }
+            });
             return result;
         } catch (error) {
             outcome = error instanceof ExecutorError ? error.code : "engine-error";

@@ -45,6 +45,7 @@
    [frontend-tests.debug-logging-test]
    [frontend-tests.errors-governor-test]
    [frontend-tests.errors-test]
+   [frontend-tests.executor-history-test]
    [frontend-tests.fonts-test]
    [frontend-tests.helpers-shapes-test]
    [frontend-tests.logic.bool-move-test]
@@ -169,6 +170,7 @@
    'frontend-tests.code-gen-style-test
    'frontend-tests.composable-tests.comp.sync-test
    'frontend-tests.copy-as-svg-test
+   'frontend-tests.executor-history-test
    'frontend-tests.data.comments-filters-test
    'frontend-tests.data.dashboard-test
    'frontend-tests.data.event-test

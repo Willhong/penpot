@@ -9,7 +9,8 @@
 # - bootStop: the stop arrives while the session's executor process boots.
 # - saveStop: a large save (1500 shapes) is stopped at several points of
 #   its run; each answer must match what the backend has, and the retry
-#   must either run once (nothing saved), replay, or be refused (outcome
+#   must either run once (nothing saved), replay (also a save found in the
+#   backend's record after the answer was lost), or be refused (outcome
 #   unknown) without adding a second copy.
 #
 # Prints a JSON report; exit status 1 when a check fails.
@@ -108,9 +109,11 @@ class Shutdown:
             consistent = (
                 (isinstance(answer, dict) and saved == BULK and retry == "replayed" and final == BULK)
                 or ("nothing was saved" in text and saved == 0 and retry == "ran" and final == BULK)
-                # no answer, or one saying the save may have landed: the retry is refused either way
+                # no answer, or one saying the save may have landed: the retry gets the save the backend
+                # recorded (PEN-20), or is refused while that cannot be told yet
                 or (("may have been saved" in text or "Remote end closed" in text)
-                    and "precondition-failed" in retry and final == saved))
+                    and (("precondition-failed" in retry and final == saved)
+                         or (retry == "replayed" and saved == BULK and final == BULK))))
             rounds.append({"fraction": fraction, "first": answer if isinstance(answer, str) else "saved",
                            "savedByFirst": saved, "retry": retry[:80], "final": final, "consistent": consistent})
             self.run(CLEAR, session, fileId=file_id)

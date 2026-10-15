@@ -38,6 +38,8 @@ interface ExecutorBundle {
     beginExecution(options: { ifUnchangedSinceRevn?: number }): void;
     finishExecution(options: { settleTimeout: number }): Promise<CommitReport>;
     abortExecution(): Promise<void>;
+    applyHistory(direction: "undo" | "redo"): Promise<number>;
+    historyStatus(): { undo: number; redo: number };
 }
 
 /**
@@ -133,5 +135,20 @@ export class HeadlessEngine {
      */
     abortExecution(): Promise<void> {
         return this.bundle.abortExecution();
+    }
+
+    /**
+     * Within an execution: undoes or redoes the last saved execution of this session in the open file, to be
+     * saved by {@link finishExecution}. Resolves to the number of changes applied.
+     */
+    applyHistory(direction: "undo" | "redo"): Promise<number> {
+        return this.bundle.applyHistory(direction);
+    }
+
+    /**
+     * Number of saved executions of this session that can be undone and redone in the open file.
+     */
+    historyStatus(): { undo: number; redo: number } {
+        return this.bundle.historyStatus();
     }
 }

@@ -56,13 +56,34 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | 요청 | 인자 | 응답 |
 |---|---|---|
 | `init` | `token`(사용자 MCP token), `sharedKey` | `ExecutorStatus` |
-| `execute` | `ExecuteParams`: `code`, `fileId?`, `pageId?`, `settleTimeoutMs?`, `ifUnchangedSinceRevn?` | `ExecutionResult` |
+| `execute` | `ExecuteParams`: `code`, `fileId?`, `pageId?`, `settleTimeoutMs?`, `ifUnchangedSinceRevn?`, `history?`(`"undo"`/`"redo"`: 코드 대신 실행 취소·다시 실행) | `ExecutionResult` |
 | `status` | — | `ExecutorStatus` |
 | `cancel` | — | 코드 실행 중이면 `true`(그 실행은 `cancelled`로 끝남), 저장 중이면 `false` |
 
 실패는 `{code, message, saved}`다. `code`는 `03` §7의 오류 코드다. `saved`는 `false`, `true`, 또는 저장 중에 프로세스가 끝나 저장이 반영됐는지 모를 때 `"unknown"`이다. token은 환경 변수가 아니라 `init` 요청으로만 건넨다.
 
-실행기는 저장 요청을 보내기 전에 응답과 별개로 `{notice: "saving"}`을 보낸다. 그 뒤에 프로세스가 끝나면(시간 초과, 메모리, 종료 신호) MCP server는 "저장 없음" 대신 `saved: "unknown"`으로 답하고, 같은 `requestId`의 재시도를 거부한다(D5). 저장 중에 받은 종료 신호는 저장의 응답을 보낸 뒤에 따른다. 그 밖의 때에는 신호를 받는 즉시 끝난다(저장 전 취소).
+실행기는 저장 요청을 보내기 전에 응답과 별개로 `{notice: "saving", save: {fileId, revnBefore, sessionId}}`를 보내고, MCP server가 `{ack: "saving"}`으로 답한 뒤(최대 10초) 저장한다. MCP server는 그 사이 `requestId` 기록에 저장을 찾을 단서를 남긴다. backend는 변경마다 저장한 세션을 기록하므로(`get-file-changes`) 응답이 사라져도 저장 여부를 나중에 알 수 있다(PEN-20). 저장 알림 뒤에 프로세스가 끝나면(시간 초과, 메모리, 종료 신호) MCP server는 "저장 없음" 대신 `saved: "unknown"`으로 답한다. 저장 중에 받은 종료 신호는 저장의 응답을 보낸 뒤에 따른다. 그 밖의 때에는 신호를 받는 즉시 끝난다(저장 전 취소).
+
+### 같은 `requestId`의 재시도와 결과 조회 (D5, PEN-20)
+
+`RequestLedger`가 (사용자, `requestId`)마다 진행 중인 실행(실행하는 MCP server 인스턴스, 저장 단서)이나 결과를 10분 둔다. 인스턴스는 15초 수명의 생존 기록을 5초마다 갱신한다(Redis). 재시도와 `request_status` 도구는 다음처럼 판단한다.
+
+| 기록 | 판단 |
+|---|---|
+| 결과 있음 | 그 결과(`replayed: true`) |
+| 진행 중, 그 인스턴스가 살아 있음 | 아직 실행 중(`precondition-failed`, 나중에 같은 ID로 재시도) |
+| 진행 중, 인스턴스가 죽음, 저장 전 | 저장 없음: 재시도는 다시 실행한다(실행기는 MCP server와 함께 끝나 저장을 보낼 수 없다) |
+| 진행 중, 인스턴스가 죽음, 저장 시작함 | backend의 변경 기록에 그 실행기 세션의 저장이 있으면 저장됨: 재시도는 그 revn을 담은 commit을 `result-lost` 경고와 함께 돌려준다(코드의 반환값은 남지 않는다). 없으면 저장 30초 뒤부터 저장 없음으로 본다. 기록이 지워졌으면 모름(`precondition-failed`, 파일을 읽고 새 ID로) |
+
+정상 종료한 인스턴스는 생존 기록을 바로 지운다.
+
+### 실행 취소 (PEN-20, D6)
+
+- `undo` 도구(`sessionId`, `redo`, `fileId`, `pageId`, `requestId`)가 그 세션에서 저장한 마지막 실행 하나를 되돌리거나, 되돌린 것을 다시 적용한다. 결과는 실행과 같은 envelope이고 `result`는 `{undone|redone: 적용한 변경 수, canUndo, canRedo}`다.
+- 실행 1회가 한 단계다. 브라우저의 실행 취소처럼 그 실행의 커밋 가운데 실행 취소에 넣는 것(`save-undo?`)의 undo 변경을 역순으로 저장하고, 레이아웃·텍스트 같은 파생 값은 실행처럼 다시 계산해 함께 저장한다. 실행 안의 `history.undoBlockBegin/Finish`는 단계를 나누지 않는다.
+- 단계는 파일별로 세션이 살아 있는 동안 50개까지 둔다(브라우저와 같은 상한). 새 실행은 다시 실행할 단계를 지운다.
+- 다른 사람의 작업을 덮지 않는다: 저장한 뒤 다른 세션(사람의 탭, 같은 사용자의 다른 세션 포함)이 그 단계가 바꾼 도형·페이지·라이브러리 자산·토큰·guide·flow를 바꿨으면 `precondition-failed`로 거부하고 아무것도 저장하지 않는다. 메시지에 그 대상을 적는다. 판단은 backend의 변경 기록(`get-file-changes`)으로 하므로 놓친 알림이나 파일을 다시 연 것과 상관없다. 기록이 지워졌거나 파일이 버전 복원됐으면 확인할 수 없어 거부한다. 확인과 저장 사이의 변경은 `ifUnchangedSinceRevn`과 같은 확인으로 막는다.
+- 실행 밖에서 바로 저장되는 것(댓글, 파일·프로젝트 만들기 같은 파일 밖 작업)은 되돌리지 않는다.
 
 ### 실행기 프로세스 → frontend 빌드 (`app.executor.api` export)
 
