@@ -966,25 +966,36 @@
 
 (defonce ^:private loading-images (atom 0))
 
-(defn wait-images-loaded
-  "Promise resolved once no image is being loaded into WASM, or after
-  `timeout-ms`. Exports wait on it: an image still loading would be missing
-  from the output."
+;; Batches of fonts and images that `process-pending` loads for the shapes
+;; set into WASM; a batch ends once its texts are laid out with the fonts.
+(defonce ^:private loading-batches (atom 0))
+
+(defn wait-assets-loaded
+  "Promise resolved once WASM holds the shapes being set, every image and
+  font they need, and their texts are laid out again with those fonts; or
+  after `timeout-ms`. Exports wait on it: an image still loading would be
+  missing from the output, and a font still loading would be drawn with
+  another font, or as empty boxes (an export right after opening a file)."
   [timeout-ms]
   (p/create
    (fn [resolve _]
-     (if (zero? @loading-images)
-       (resolve nil)
-       (let [key   (js/Symbol)
-             done  (fn []
-                     (remove-watch loading-images key)
-                     (resolve nil))
-             timer (js/setTimeout done timeout-ms)]
-         (add-watch loading-images key
-                    (fn [_ _ _ n]
-                      (when (zero? n)
-                        (js/clearTimeout timer)
-                        (done)))))))))
+     (let [refs   [loading-images loading-batches shapes-loading?]
+           ready? #(and (zero? @loading-images)
+                        (zero? @loading-batches)
+                        (not @shapes-loading?))]
+       (if (ready?)
+         (resolve nil)
+         (let [key   (js/Symbol)
+               done  (fn []
+                       (run! #(remove-watch % key) refs)
+                       (resolve nil))
+               timer (js/setTimeout done timeout-ms)]
+           (run! #(add-watch % key
+                             (fn [_ _ _ _]
+                               (when (ready?)
+                                 (js/clearTimeout timer)
+                                 (done))))
+                 refs)))))))
 
 (defn- fetch-image
   "Loads an image and hands it to WASM. Raster images are decoded by the
@@ -1762,22 +1773,27 @@
         (update-text-layouts text-ids)))
 
     (if (or (seq pending-thumbnails) (seq pending-full))
-      (->> (rx/concat
-            (->> (rx/from (vals pending-thumbnails))
-                 (rx/merge-map (fn [callback] (if (fn? callback) (callback) (rx/empty))))
-                 (rx/reduce conj [])
-                 (rx/catch #(rx/empty)))
-            (->> (rx/from (vals pending-full))
-                 (rx/mapcat (fn [callback] (if (fn? callback) (callback) (rx/empty))))
-                 (rx/reduce conj [])
-                 (rx/catch #(rx/empty))))
-           (rx/subs!
-            noop-fn
-            noop-fn
-            (fn []
-              (relayout-after-fonts! shapes text-font-state)
-              (request-render "images-loaded")
-              (when (fn? on-complete) (on-complete)))))
+      (do
+        (swap! loading-batches inc)
+        (->> (rx/concat
+              (->> (rx/from (vals pending-thumbnails))
+                   (rx/merge-map (fn [callback] (if (fn? callback) (callback) (rx/empty))))
+                   (rx/reduce conj [])
+                   (rx/catch #(rx/empty)))
+              (->> (rx/from (vals pending-full))
+                   (rx/mapcat (fn [callback] (if (fn? callback) (callback) (rx/empty))))
+                   (rx/reduce conj [])
+                   (rx/catch #(rx/empty))))
+             ;; runs after the completion below, once the texts are laid out
+             ;; with the fonts (`wait-assets-loaded`)
+             (rx/finalize #(swap! loading-batches dec))
+             (rx/subs!
+              noop-fn
+              noop-fn
+              (fn []
+                (relayout-after-fonts! shapes text-font-state)
+                (request-render "images-loaded")
+                (when (fn? on-complete) (on-complete))))))
       ;; No pending images — complete immediately.
       (when on-complete (on-complete)))))
 
@@ -1934,20 +1950,24 @@
         (d/index-by :key :callback full)]
 
     (if (or (seq pending-thumbnails) (seq pending-full))
-      (->> (rx/concat
-            (->> (rx/from (vals pending-thumbnails))
-                 (rx/merge-map (fn [callback] (if (fn? callback) (callback) (rx/empty))))
-                 (rx/reduce conj [])
-                 (rx/catch #(rx/empty)))
-            (->> (rx/from (vals pending-full))
-                 (rx/mapcat (fn [callback] (if (fn? callback) (callback) (rx/empty))))
-                 (rx/reduce conj [])
-                 (rx/catch #(rx/empty))))
-           (rx/subs!
-            noop-fn
-            noop-fn
-            (fn []
-              (when (fn? on-complete) (on-complete)))))
+      (do
+        (swap! loading-batches inc)
+        (->> (rx/concat
+              (->> (rx/from (vals pending-thumbnails))
+                   (rx/merge-map (fn [callback] (if (fn? callback) (callback) (rx/empty))))
+                   (rx/reduce conj [])
+                   (rx/catch #(rx/empty)))
+              (->> (rx/from (vals pending-full))
+                   (rx/mapcat (fn [callback] (if (fn? callback) (callback) (rx/empty))))
+                   (rx/reduce conj [])
+                   (rx/catch #(rx/empty))))
+             ;; after `on-complete`, which may lay texts out with the fonts
+             (rx/finalize #(swap! loading-batches dec))
+             (rx/subs!
+              noop-fn
+              noop-fn
+              (fn []
+                (when (fn? on-complete) (on-complete))))))
       ;; No pending images — complete immediately.
       (when on-complete (on-complete)))))
 

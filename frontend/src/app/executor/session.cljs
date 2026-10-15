@@ -33,6 +33,7 @@
    [app.main.router :as rt]
    [app.main.store :as st]
    [app.render-wasm.api :as wasm.api]
+   [app.render-wasm.api.fonts :as wasm.fonts]
    [app.util.i18n :as i18n]
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]
@@ -79,7 +80,8 @@
   "Loads the current page's objects into render-wasm, as the wasm viewport does
   on mount, minus the view setup (there is no render surface). The shapes are
   serialized synchronously; the returned promise resolves once their fonts and
-  images are in the engine too."
+  images are in the engine too, and the texts laid out with those fonts.
+  Exports wait for that (`wasm.api/wait-assets-loaded`)."
   []
   (p/create
    (fn [resolve _]
@@ -90,6 +92,12 @@
        (wasm.api/set-objects-callback
         shapes
         (fn []
+          ;; The texts were laid out when they were set, before their fonts
+          ;; (a fallback for Korean, a bold face) came in; drawn as they are,
+          ;; their glyphs would be empty boxes or another face. The wasm
+          ;; viewport lays them out again the same way once fonts arrive.
+          (run! wasm.fonts/force-update-text-layout
+                (into [] (comp (filter cfh/text-shape?) (map :id)) shapes))
           (st/emit! (dw/update-page-position-data))
           (resolve nil)))))))
 

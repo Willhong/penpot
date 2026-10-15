@@ -1630,8 +1630,8 @@
                        wasm-enabled? (features/active-feature? @st/state "render-wasm/v1")]
                    (if (and wasm-enabled?
                             (contains? #{:jpeg :webp :png :pdf :svg} export-type))
-                     ;; Render in the browser with render-wasm, once the images
-                     ;; being loaded are in: they would be missing otherwise.
+                     ;; Render in the browser with render-wasm, once the images and
+                     ;; fonts being loaded are in: they would be missing otherwise.
                      (let [export {:file-id   file-id
                                    :page-id   page-id
                                    :object-id id
@@ -1644,7 +1644,7 @@
                                       (wasm.exports/export-image-uri export)))]
                        (js/Promise.
                         (fn [resolve reject]
-                          (->> (rx/from (p/then (p/delay 0) #(wasm.api/wait-images-loaded 10000)))
+                          (->> (rx/from (p/then (p/delay 0) #(wasm.api/wait-assets-loaded 10000)))
                                (rx/mapcat
                                 (fn [_]
                                   (http/send!

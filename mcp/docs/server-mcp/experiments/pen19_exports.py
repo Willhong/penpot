@@ -11,6 +11,9 @@
 #   export is reported as `renderer`. SVG and generated code must be equal
 #   once origins and media ids are normalized; PDF once the image colour
 #   space tag is.
+# - freshSession: a session that only opens the saved file exports the same
+#   pixels as the session that made it: the fonts of the texts, a fallback
+#   for Korean included, are loaded before the export draws (PEN-9).
 # - large: a result over 1 MB comes back as a download URL that works for
 #   its owner only, from execute_code and export_shape.
 # - jobs: `async: true` answers with a job; it ends done and saved, or
@@ -141,7 +144,8 @@ def squash(text):
 def pdf_streams(data):
     """The decompressed streams of a PDF, without ICC profiles, with resource names numbered away."""
     out = []
-    for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
+    # not the "stream" of a preceding "endstream" (PEN-9: that matched whole objects in between)
+    for match in re.finditer(rb"(?<!end)stream\r?\n(.*?)\r?\nendstream", data, re.S):
         body = match.group(1)
         try:
             body = zlib.decompress(body)
@@ -222,6 +226,27 @@ class Pen19:
             "ok": all(r["ok"] for r in rasters.values()) and svg["ok"] and pdf["ok"]
                   and all(c["ok"] for c in code_out.values()),
             "rasters": rasters, "svg": svg, "pdf": pdf, "code": code_out,
+        }
+
+    def fresh_session(self):
+        image = base64.b64encode(png(24, 16, lambda x, y: bytes(((x * 37) % 256, (y * 53) % 256,
+                                                                    ((x + y) * 17) % 256)))).decode()
+        code = (HERE / "pen19_export.js").read_text().replace("__PNG_BASE64__", image)
+        file_id, _ = mcpv.create_file("pen19-fresh-session")
+        made = self.run(code, fileId=file_id, session=f"{self.session}-made")["result"]["outputs"]
+        again = code.split("const board = ")[0] + """
+const shape = (name) => penpot.currentPage.findShapes({ name })[0];
+return { "card.png": b64(await shape("card").export({ type: "png", scale: 1 })),
+         "title.png": b64(await shape("title").export({ type: "png", scale: 1 })) };"""
+        fresh = self.run(again, fileId=file_id, session=f"{self.session}-fresh")["result"]
+        rasters = {}
+        for name in ("card.png", "title.png"):
+            (OUT / f"made-{name}").write_bytes(base64.b64decode(made[name]))
+            (OUT / f"fresh-{name}").write_bytes(base64.b64decode(fresh[name]))
+            rasters[name] = pixel_diff(f"made-{name}", f"fresh-{name}")
+        self.report["freshSession"] = {
+            "ok": all(r.get("sameSize") and r.get("differing") == 0 for r in rasters.values()),
+            "rasters": rasters,
         }
 
     def large(self):
@@ -369,7 +394,7 @@ def main():
     parser.add_argument("--space", type=int, required=True)
     args = parser.parse_args()
     run = Pen19(args.space)
-    for step in (run.outputs, run.large, run.jobs, run.export_shape, run.file):
+    for step in (run.outputs, run.fresh_session, run.large, run.jobs, run.export_shape, run.file):
         try:
             step()
         except Exception as error:  # noqa: BLE001
