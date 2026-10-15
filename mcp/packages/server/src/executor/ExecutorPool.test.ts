@@ -76,4 +76,25 @@ describe("ExecutorPool session limits", () => {
         await target.execute("frank", "z", { code: "quick" });
         assert.deepEqual(sessions(target), ["y", "z"]);
     });
+
+    // D9: at most two executions per user at a time, and the server's maximum over everyone
+    const started = () => new Promise((resolve) => setTimeout(resolve, 500));
+    const refused = (message: string) => (error: unknown) =>
+        error instanceof ExecutorError && error.code === "resource-limit" && error.message.includes(message);
+
+    it("refuses a user's third execution at a time, not another user's", async () => {
+        const target = pool({ PENPOT_MCP_EXECUTOR_PER_USER: "2" });
+        void target.execute("gina", "a", { code: "hang" }).catch(() => undefined);
+        void target.execute("gina", "b", { code: "hang" }).catch(() => undefined);
+        await started();
+        await assert.rejects(target.execute("gina", "c", { code: "quick" }), refused("at most 2 executions per user"));
+        assert.equal((await target.execute("hank", "a", { code: "quick" })).result, "done");
+    });
+
+    it("refuses any execution past the server's maximum", async () => {
+        const target = pool({ PENPOT_MCP_EXECUTOR_MAX: "1" });
+        void target.execute("ivy", "a", { code: "hang" }).catch(() => undefined);
+        await started();
+        await assert.rejects(target.execute("jack", "a", { code: "quick" }), refused("maximum number of executions"));
+    });
 });
