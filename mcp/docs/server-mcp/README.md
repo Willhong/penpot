@@ -18,7 +18,8 @@
 | [02-browser-dependency-research.md](02-browser-dependency-research.md) | PEN-7 | 기능별 브라우저 의존성, 서버 경로 대안, 실험 E1–E3 | 완료, 미확인 E4–E11 목록 |
 | [03-runtime-contract.md](03-runtime-contract.md) | PEN-8 | 실행 격리, 완료 단계, 계산·출력 계약, 동등성 기준, 오류 코드 | 기술 계약 확정, E4 실증, blocker E5–E7, D10·D12–D15 확정(D14로 E10 불필요) |
 | [04-executor.md](04-executor.md) | PEN-10 | 서버 실행기 구성 요소와 interface, 실행 순서, 세션, 측정값 | interface 확정, PEN-3 연결 |
-| [05-results.md](05-results.md) | PEN-22 | 티켓별 실제 MCP 시험 결과 | PEN-3, PEN-4 |
+| [05-results.md](05-results.md) | PEN-22 | 티켓별 실제 MCP 시험 결과 | PEN-3~24 |
+| [06-integration.md](06-integration.md) | PEN-9 | 한 빌드로 본 통합 검증: 회귀, 교차 기능, 복구, 사용자 결정, 기능 목록 대응 | 완료(결정 대기 1건) |
 
 ## 도구
 
@@ -30,6 +31,10 @@
 - `experiments/pen3_vertical_slice.py`: 실제 MCP 호출(서버 실행)로 사각형을 저장하고, 브라우저가 열렸을 때·닫혔을 때·새로고침 뒤, 거부 요청 무변경을 확인한다.
 - `experiments/pen4_files_pages.py`: 프로젝트·파일·페이지·메타데이터·버전을 브라우저 없이 시험하고 브라우저 결과와 비교한다.
 - `experiments/mcp_client.py`, `observers.py`: 실험용 MCP 클라이언트, 관찰 브라우저 조작.
+- `experiments/pen9_regression.py`: 모든 티켓 시험을 같은 빌드로 차례로 돌리고 보고를 모은다.
+- `experiments/pen9_integrated.py` + `.js`: 기능을 엮은 시나리오, 브라우저 0개 실행, 복구·지연(D7)·presence(D3)·renderer(D13) 시험.
+- `experiments/pen9_gaps.py` + `pen9_gaps_*.js`: 다른 시험이 쓰지 않은 Plugin API member를 실행한다.
+- `experiments/pen9_coverage.py`: 실행기가 실제로 쓴 member를 기록해 기능 목록과 맞춘다(`run`, `report`).
 - 검증 스택: 저장소 루트의 `scripts/mcp-verify-env`.
 
 ## 다음 구현 작업(PEN-22)이 시작할 때

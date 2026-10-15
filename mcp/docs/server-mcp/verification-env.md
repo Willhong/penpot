@@ -110,6 +110,13 @@ scripts/mcp-verify-env destroy --yes # 이 스택 볼륨까지 제거
 - 관찰 브라우저: owner·editor로 로그인한 탭이다. 쓰지 않고 레이어 목록과 캔버스만 본다.
 - 브라우저 0개 조건: 관찰 탭을 모두 닫거나 `about:blank`로 보낸 뒤 실행한다. 현재 MCP는 이 조건에서 실패한다. 이것이 비교 기준이다.
 
+## PEN-9에서 알게 된 것
+
+- `pen9_coverage.py run`은 MCP 창의 명령을 `bash ~/penpot/.mcp-verify/mcp-run.sh`로 바꾼다. 이 스크립트는 `start-services.sh`와 같은 MCP 명령이고, `.mcp-verify/trace-api` 파일의 값(0/1)으로 추적을 켜고 끈다. 창의 "마지막 명령 다시 실행" 재시작(`restart_mcp`)도 이 모드를 유지한다.
+- 메모리: frontend 단위 테스트 전체와 실행기 세션 여러 개가 동시에 돌면 main 컨테이너(Docker VM 16 GB)에서 backend JVM이 메모리 부족으로 강제 종료됐다(`Killed`). 큰 시험은 차례로 돌린다. 끊기면 tmux `backend` 창에서 다시 띄운다.
+- Ctrl-C 재시작: MCP는 `pnpm -r --parallel`로 플러그인 정적 서버와 함께 뜬다. Ctrl-C에 플러그인 쪽이 먼저 끝나면 pnpm이 서버를 SIGKILL로 끝내 마지막 응답이 나가지 못할 때가 있다(`pen6_shutdown.py` 12회 중 1회). 운영 이미지는 `node index.js`만 띄우므로 이 경로가 없다. 서버에만 SIGTERM을 보내면 응답은 항상 실제 저장과 맞았다.
+- exporter 창은 약 5분마다 다시 시작한다(`exporter key initialized`). 서버 MCP의 내보내기는 exporter를 부르지 않으므로(D14) 시험에는 영향이 없다.
+
 ## 구성 중 발견해 고친 문제
 
 1. **rustup 경쟁**: frontend watch와 exporter watch가 동시에 `rustup default 1.99.0`을 실행하면 같은 다운로드 파일을 두고 충돌한다. 그래서 `start-services.sh`가 서비스보다 먼저 toolchain을 한 번 설치한다.

@@ -70,6 +70,12 @@ def restart_mcp(trace):
     raise RuntimeError("the MCP server did not come back")
 
 
+def ranges():
+    """The MCP log ranges of the recorded runs: a full run replaces them, an `--only` run adds to them."""
+    mark = json.loads(MARK.read_text())
+    return mark["ranges"] if "ranges" in mark else [mark]
+
+
 def traced_members(start, end):
     """Every `<kind>.<member>` the trace lines of the MCP log between two byte offsets name."""
     members = set()
@@ -124,9 +130,17 @@ NOT_APPLICABLE = {
     ("Context", "management"): "`Penpot` omits it; MCP code has `penpotMgmt`",
     ("LocalStorage", "*"): "the MCP plugin manifest has no allow:localstorage permission: `penpot.localStorage` "
                            "refuses in a browser and on the server alike (pen9_gaps.py `context`)",
+    ("Context", "localStorage"): "read, and refused for want of the permission (pen9_gaps.py `context`); the trace "
+                                 "records only reads that return",
+    ("FileValidationError", "*"): "`validate()` finds no error in a valid file, and the backend (file validation on) "
+                                  "saves no broken one",
+    ("TokenTypographyValueString", "fontFamilies"): "declared, but a typography token's value has `fontFamily` "
+                                                    "instead, in a browser and on the server alike",
+    ("TokenTypographyValueString", "fontSizes"): "declared, but the value has `fontSize` instead, in a browser and "
+                                                 "on the server alike",
 }
 # elements of nested arrays the inventory does not list on their own
-IGNORED_KINDS = re.compile(r"(^GradientStopProxy$|\.gradient\.stops$)")
+IGNORED_KINDS = re.compile(r"(^GradientStopProxy$|\.gradient\.stops$|\.date$)")
 GENERIC = {"Omit", "Pick", "Partial", "Promise", "Array", "Record", "Readonly", "Exclude"}
 
 
@@ -210,8 +224,7 @@ def report(_args):
     os.chdir(mcpv.ROOT)
     import gen_inventory  # noqa: E402  (reads its inputs relative to the working directory)
 
-    mark = json.loads(MARK.read_text())
-    traced = traced_members(mark["start"], mark["end"])
+    traced = set().union(*(traced_members(r["start"], r["end"]) for r in ranges()))
     decls, unions = declarations()
     covered, unknown_kinds = set(), set()
     for entry in traced:
@@ -228,10 +241,12 @@ def report(_args):
             for owner in ancestors(interface, decls):
                 covered.add((owner, prefix + member))
 
-    with LOG.open("rb") as log:
-        log.seek(mark["start"])
-        chunk = log.read(mark["end"] - mark["start"]).decode(errors="replace")
-    tools_run = set(re.findall(r"Tool execution #\d+ starting: (\w+)", chunk))
+    tools_run = set()
+    for r in ranges():
+        with LOG.open("rb") as log:
+            log.seek(r["start"])
+            chunk = log.read(r["end"] - r["start"]).decode(errors="replace")
+        tools_run |= set(re.findall(r"Tool execution #\d+ starting: (\w+)", chunk))
 
     rows, by_area = [], {}
     for interface, members in sorted(gen_inventory.parse_api().items()):
@@ -284,9 +299,10 @@ def run(args):
         code = subprocess.run(command).returncode
     finally:
         end = LOG.stat().st_size
-        MARK.write_text(json.dumps({"start": start, "end": end}))
+        kept = ranges() if args.only and MARK.exists() else []
+        MARK.write_text(json.dumps({"ranges": kept + [{"start": start, "end": end}]}))
         restart_mcp(trace=False)
-    print(json.dumps({"regressionExit": code, "traceLines": len(traced_members(start, end))}))
+    print(json.dumps({"regressionExit": code, "tracedMembers": len(traced_members(start, end))}))
 
 
 def main():
@@ -303,9 +319,8 @@ def main():
     elif args.command == "report":
         report(args)
     elif args.command == "kinds":
-        mark = json.loads(MARK.read_text())
         kinds = {}
-        for member in traced_members(mark["start"], mark["end"]):
+        for member in set().union(*(traced_members(r["start"], r["end"]) for r in ranges())):
             kind, _, name = member.rpartition(".")
             kinds.setdefault(kind, []).append(name)
         print(json.dumps({k: sorted(v) for k, v in sorted(kinds.items())}, indent=1))

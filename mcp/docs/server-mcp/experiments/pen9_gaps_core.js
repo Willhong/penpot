@@ -207,7 +207,8 @@ flow.remove();
 out.flowsAfter = penpot.currentPage.flows.length;
 const nav = rect.addInteraction("click", { type: "navigate-to", destination: target });
 out.interactionShape = nav.shape && nav.shape.name;
-const over = ell.addInteraction("click", { type: "open-overlay", destination: overlay, relativeTo: target,
+// an overlay needs its shape inside a board: elsewhere both sides drop it without a word
+const over = c1.addInteraction("click", { type: "open-overlay", destination: overlay, relativeTo: target,
   position: "manual", manualPositionLocation: { x: 10, y: 20 } });
 out.overlay = tryv(() => [over.action.relativeTo && over.action.relativeTo.name,
   over.action.manualPositionLocation && [over.action.manualPositionLocation.x, over.action.manualPositionLocation.y]]);

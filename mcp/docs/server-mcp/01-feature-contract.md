@@ -97,6 +97,8 @@
 
 **결정: 선택지 2.** audit log에 실행 주체 표시를 남기고, 화면 presence에서는 구분 아이콘을 쓴다.
 
+구현(PEN-9): audit log의 실행기 요청은 `access-token-type: "mcp"`, `client-user-agent: "node"`로 남아 브라우저 요청과 구분된다. presence는 backend가 실행기의 알림 연결(사용자 MCP token + `mcp` 공유 키)을 알아보고 `join-file`·`presence` 메시지에 `:ai`를 붙인다. 편집 화면의 사용자 목록은 그 아바타를 점선 테두리와 "AI" 표시로 그리고, 이름을 "AI (사용자명)"으로 보인다([화면](../../../.mcp-verify/shots/pen9-ai-presence.png)).
+
 ## 4. 대상 지정과 실행 컨텍스트
 
 **[기술 결정]**

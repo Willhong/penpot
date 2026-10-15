@@ -164,6 +164,9 @@ MCP server가 멈출 때(`SIGINT`/`SIGTERM`)는 연결을 닫기 전에 실행�
 | 첫 호출(프로세스 시작) | 약 4–5초 | PEN-3 측정 |
 | 이어지는 호출 | 0.04–0.1초 (사각형 1개) | PEN-3 측정 |
 
+- 버전: `penpot.version`과 결과의 `engine.frontendVersion`은 `PENPOT_VERSION`이 없으면 실행기가 쓰는 frontend 빌드(wasm 디렉터리의 상위)의 `index.html`이 선언한 값을 쓴다. 같은 빌드를 연 브라우저와 같다(PEN-9).
+- 추적(PEN-9 시험 전용): `PENPOT_EXECUTOR_TRACE_API=1`이면 실행마다 사용자 코드가 읽고 쓰고 부른 Plugin API member를 MCP 로그에 `[api-trace]` 한 줄로 남긴다(`child/ApiTrace.ts`). 기본은 꺼짐이다.
+
 로그 한 줄: 사용자 token 지문, 세션, 파일 id, 소요 시간, 저장한 변경 수, 결과 코드. 코드·결과·token은 남기지 않는다. 실패한 도구 호출의 오류 줄에는 실행기 오류의 코드만 남긴다. 메시지에는 사용자 코드가 던진 문구나 거부된 값이 들어갈 수 있기 때문이다(PEN-9에서 고침, 클라이언트는 전체 메시지를 받는다). 예상하지 못한 엔진 오류는 stack만 남긴다.
 
 ## 7. UI 전용 member (D8) — 현재 상태
