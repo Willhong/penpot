@@ -69,6 +69,17 @@ impl RasterFormat {
 
 /// Renders a shape tree to encoded image bytes on a CPU raster surface (no
 /// GPU/WebGL). Returns `(encoded_bytes, width_px, height_px)`.
+/// Float residue a shape's bounds may carry after layout or transforms
+/// (326.00009 for 326), in output pixels. Below it, no pixel is added.
+const EXPORT_SIZE_RESIDUE: f32 = 0.001;
+
+/// Pixels an export spans for `length` document units at `scale`: rounded up,
+/// but not for float residue, so the same shape exports at the same size
+/// whatever order of operations gave its bounds (browser and server alike).
+pub fn export_size(length: f32, scale: f32) -> i32 {
+    (length * scale - EXPORT_SIZE_RESIDUE).ceil() as i32
+}
+
 pub fn render_to_raster(
     shared: &mut RenderResources,
     id: &Uuid,
@@ -92,8 +103,8 @@ pub fn render_to_raster(
         shape.extrect(tree, scale)
     };
 
-    let width = (bounds.width() * scale).ceil() as i32;
-    let height = (bounds.height() * scale).ceil() as i32;
+    let width = export_size(bounds.width(), scale);
+    let height = export_size(bounds.height(), scale);
     if width <= 0 || height <= 0 {
         return Ok((Vec::new(), 0, 0));
     }
@@ -120,4 +131,22 @@ pub fn render_to_raster(
         .ok_or_else(|| Error::CriticalError(format!("{format:?} encode failed")))?;
 
     Ok((data.as_bytes().to_vec(), width, height))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::export_size;
+
+    #[test]
+    fn export_size_rounds_up_partial_pixels() {
+        assert_eq!(export_size(326.5, 1.0), 327);
+        assert_eq!(export_size(326.0, 1.0), 326);
+        assert_eq!(export_size(100.25, 2.0), 201);
+    }
+
+    #[test]
+    fn export_size_ignores_float_residue() {
+        assert_eq!(export_size(326.000_1, 1.0), 326);
+        assert_eq!(export_size(100.000_2, 2.0), 200);
+    }
 }

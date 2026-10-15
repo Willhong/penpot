@@ -1563,8 +1563,8 @@ impl Surfaces {
     }
 
     pub fn resize_export_surface(&mut self, scale: f32, rect: skia::Rect) {
-        let target_w = (scale * rect.width()).ceil() as i32;
-        let target_h = (scale * rect.height()).ceil() as i32;
+        let target_w = crate::render::raster::export_size(rect.width(), scale);
+        let target_h = crate::render::raster::export_size(rect.height(), scale);
 
         let max_w = i32::max(self.extra_tile_dims.width, target_w);
         let max_h = i32::max(self.extra_tile_dims.height, target_h);
