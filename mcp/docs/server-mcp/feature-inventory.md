@@ -8,7 +8,7 @@
 
 - Plugin API interface/object type: 108개, member: 716개
 - 미매핑 member: 0개, 미매핑 MCP 도구: 0개
-- frontend 구현 이름을 찾지 못한 member(값 객체 제외): 1개 — 아래 '구현 확인 필요' 참조
+- frontend 구현 이름을 찾지 못한 member(값 객체 제외): 0개 — 아래 '구현 확인 필요' 참조
 
 | 영역 | 담당 | member 수 | 조회 | 편집 | 조회·편집 | 출력 | 파일관리 | UI 전용 | 이벤트 | 런타임 | 값 객체 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -72,12 +72,15 @@
 | `CljsCompilerOutputTool` | `cljs_compiler_output` | `runtime` | PEN-10 | shadow-cljs 컴파일 출력(devenv 개발 도구) |
 | `CljsReplTool` | `cljs_repl` | `runtime` | PEN-10 | frontend REPL(devenv 개발 도구) |
 | `ExecuteCodeTool` | `execute_code` | `runtime` | PEN-10 | 모든 Plugin API 기능의 실행 경로 |
+| `ExecutionJobTool` | `execution_job` | `output` | PEN-19 | `async` 실행(큰 내보내기 등)의 상태·결과·취소(서버 실행 전용) |
 | `ExportShapeTool` | `export_shape` | `output` | PEN-19 | 도형 이미지 내보내기 |
 | `HighLevelOverviewTool` | `high_level_overview` | `runtime` | PEN-10 | 지침 문서 제공 |
 | `ImportImageTool` | `import_image` | `media` | PEN-16 | 로컬 파일 이미지 가져오기(로컬 모드 전용) |
 | `ImportPenpotFileTool` | `import_penpot_file` | `filemgmt` | PEN-4 | .penpot 파일 가져오기(devenv 단일 사용자 전용) |
 | `PenpotApiInfoTool` | `penpot_api_info` | `runtime` | PEN-10 | API 문서 조회 |
 | `ReadTaigaIssueTool` | `read_taiga_issue` | `runtime` | PEN-10 | Taiga 이슈 조회(devenv 개발 도구) |
+| `RequestStatusTool` | `request_status` | `history` | PEN-20 | 응답을 잃은 요청의 결과 조회(서버 실행 전용) |
+| `UndoTool` | `undo` | `history` | PEN-20 | 저장한 실행의 실행 취소·다시 실행(서버 실행 전용) |
 
 ## 영역별 member
 
@@ -361,7 +364,7 @@
 | `TokenSet` | 조회 | `id`, `tokens`, `tokensByType`, `getTokenById()` |
 | `TokenSet` | 조회·편집 | `name`, `active` |
 | `TokenSet` | 편집 | `toggleActive()`, `addToken()`, `duplicate()`, `remove()` |
-| `TokenTheme` | 조회 | `id`, `externalId` ✗, `activeSets` |
+| `TokenTheme` | 조회 | `id`, `externalId`, `activeSets` |
 | `TokenTheme` | 조회·편집 | `group`, `name`, `active` |
 | `TokenTheme` | 편집 | `toggleActive()`, `addSet()`, `removeSet()`, `duplicate()`, `remove()` |
 
@@ -441,7 +444,4 @@
 
 ## 구현 확인 필요
 
-선언은 있으나 `frontend/src/app/plugins/*.cljs`와 plugins-runtime API에서 같은 이름을 찾지 못한 member다.
-이름 검색 기반이라 다른 이름으로 구현됐을 수 있다. 각 담당 티켓에서 실제 동작을 확인한다.
-
-- `TokenTheme.externalId`
+없음.
