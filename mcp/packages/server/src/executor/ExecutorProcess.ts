@@ -4,6 +4,7 @@ import { ExecutorError } from "./ExecutorError";
 import type {
     ExecuteParams,
     ExecutionResult,
+    ExecutorNotice,
     ExecutorRequest,
     ExecutorResponse,
     ExecutorStatus,
@@ -30,6 +31,9 @@ export class ExecutorProcess {
     private exited = false;
     private initialized = false;
     private exitReason: ExecutorError | null = null;
+    /** whether the execution in progress has started saving */
+    private saving = false;
+    private readonly exitedPromise: Promise<void>;
 
     /** time of the last request, for idle eviction */
     public lastUsed = Date.now();
@@ -61,8 +65,16 @@ export class ExecutorProcess {
             stdio: ["ignore", "inherit", "inherit", "ipc"],
             serialization: "advanced",
         });
-        this.child.on("message", (response: ExecutorResponse) => this.onResponse(response));
-        this.child.on("exit", (code, signal) => this.onExit(code, signal));
+        this.child.on("message", (message: ExecutorResponse | ExecutorNotice) =>
+            "notice" in message ? (this.saving = true) : this.onResponse(message)
+        );
+        // "close" comes after the IPC messages the process sent before it ended, such as a saving notice
+        this.exitedPromise = new Promise((resolve) =>
+            this.child.on("close", (code, signal) => {
+                this.onExit(code, signal);
+                resolve();
+            })
+        );
     }
 
     /**
@@ -86,10 +98,35 @@ export class ExecutorProcess {
 
     /**
      * Runs one execution. When it exceeds `timeoutMs`, the process is killed and the execution fails with
-     * `resource-limit`; nothing is saved, since an execution saves only at its end.
+     * `resource-limit`; nothing is saved, since an execution saves only at its end, unless it was saving
+     * already (then the error says the changes may have been saved).
      */
-    execute(params: ExecuteParams, timeoutMs: number, signal?: AbortSignal): Promise<ExecutionResult> {
-        return this.request<ExecutionResult>({ type: "execute", params }, timeoutMs, signal);
+    async execute(params: ExecuteParams, timeoutMs: number, signal?: AbortSignal): Promise<ExecutionResult> {
+        this.saving = false;
+        try {
+            return await this.request<ExecutionResult>({ type: "execute", params }, timeoutMs, signal);
+        } finally {
+            this.saving = false;
+        }
+    }
+
+    /**
+     * Ends the process for a shutdown of the MCP server: cancels the execution in progress (D6), lets it
+     * end for at most `graceMs` (an execution that is saving completes its save), then ends the process.
+     */
+    async shutdown(graceMs: number): Promise<void> {
+        if (this.exited) {
+            return;
+        }
+        if (this.pending.size > 0) {
+            this.cancel();
+            const deadline = Date.now() + graceMs;
+            while (this.pending.size > 0 && !this.exited && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        }
+        this.kill(new ExecutorError("cancelled", "the MCP server is shutting down"));
+        await this.exitedPromise;
     }
 
     status(): Promise<ExecutorStatus> {
@@ -185,7 +222,7 @@ export class ExecutorProcess {
     private onExit(code: number | null, signal: NodeJS.Signals | null): void {
         this.exited = true;
         const stopped = signal === "SIGINT" || signal === "SIGTERM";
-        const reason =
+        let reason =
             this.exitReason ??
             (stopped
                 ? new ExecutorError("cancelled", "the MCP server is shutting down")
@@ -195,6 +232,10 @@ export class ExecutorProcess {
                         `the executor process ended (code ${code}, signal ${signal}); it may have run out of memory`
                     )
                   : new ExecutorError("engine-error", `the executor process failed to start (code ${code})`));
+        if (this.saving) {
+            // the save request may have reached the backend
+            reason = new ExecutorError(reason.code, reason.message, "unknown");
+        }
         this.exitReason = reason;
         this.logger.info("Executor %s exited: code=%s signal=%s reason=%s", this.key, code, signal, reason.code);
         for (const pending of [...this.pending.values()]) {

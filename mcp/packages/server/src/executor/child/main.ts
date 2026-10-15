@@ -11,7 +11,13 @@
  * The user's token and the MCP shared key arrive with the `init` request, not through the environment.
  */
 import { ExecutorError } from "../ExecutorError";
-import type { ExecutorErrorCode, ExecutorErrorData, ExecutorRequest, ExecutorResponse } from "../ExecutorProtocol";
+import type {
+    ExecutorErrorCode,
+    ExecutorErrorData,
+    ExecutorNotice,
+    ExecutorRequest,
+    ExecutorResponse,
+} from "../ExecutorProtocol";
 import { ExecutorRuntime } from "./ExecutorRuntime";
 import { MemoryStorage } from "./MemoryStorage";
 import { repairProcessIntrinsics } from "./Sandbox";
@@ -22,11 +28,18 @@ import { repairProcessIntrinsics } from "./Sandbox";
 // before the workspace bundle is imported (see `repairProcessIntrinsics`)
 repairProcessIntrinsics();
 
-const runtime = new ExecutorRuntime({
-    bundlePath: requireEnv("PENPOT_EXECUTOR_BUNDLE"),
-    wasmDir: requireEnv("PENPOT_EXECUTOR_WASM_DIR"),
-    settleTimeoutMs: parseInt(process.env.PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS ?? "10000", 10),
-});
+const runtime = new ExecutorRuntime(
+    {
+        bundlePath: requireEnv("PENPOT_EXECUTOR_BUNDLE"),
+        wasmDir: requireEnv("PENPOT_EXECUTOR_WASM_DIR"),
+        settleTimeoutMs: parseInt(process.env.PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS ?? "10000", 10),
+    },
+    // sent before the save request leaves, so the server never takes an ended save for "nothing saved"
+    () => {
+        holdStopSignals();
+        return new Promise((resolve) => process.send!({ notice: "saving" } satisfies ExecutorNotice, () => resolve()));
+    }
+);
 
 function requireEnv(name: string): string {
     const value = process.env[name];
@@ -72,8 +85,8 @@ function toErrorData(error: unknown): ExecutorErrorData {
     ).toData();
 }
 
-function reply(response: ExecutorResponse): void {
-    process.send!(response);
+function reply(response: ExecutorResponse): Promise<void> {
+    return new Promise((resolve) => process.send!(response, () => resolve()));
 }
 
 async function handle(request: ExecutorRequest): Promise<unknown> {
@@ -90,11 +103,38 @@ async function handle(request: ExecutorRequest): Promise<unknown> {
 }
 
 process.on("message", (request: ExecutorRequest) => {
-    handle(request).then(
-        (value) => reply({ id: request.id, ok: true, value }),
-        (error) => reply({ id: request.id, ok: false, error: toErrorData(error) })
-    );
+    handle(request)
+        .then(
+            (value) => reply({ id: request.id, ok: true, value }),
+            (error) => reply({ id: request.id, ok: false, error: toErrorData(error) })
+        )
+        .then(() => {
+            if (request.type === "execute") {
+                releaseStopSignals();
+            }
+        });
 });
+
+// A stop signal (a Ctrl-C reaches the whole process group) ends the process at once, which cancels an
+// execution before its save: the default action, which needs no turn of the event loop. While saving, the
+// signal waits until the save is answered, so its outcome is known.
+let deferredStop: NodeJS.Signals | null = null;
+const deferStop = (signal: NodeJS.Signals) => {
+    deferredStop = signal;
+};
+
+function holdStopSignals(): void {
+    process.on("SIGINT", deferStop);
+    process.on("SIGTERM", deferStop);
+}
+
+function releaseStopSignals(): void {
+    process.off("SIGINT", deferStop);
+    process.off("SIGTERM", deferStop);
+    if (deferredStop) {
+        process.kill(process.pid, deferredStop);
+    }
+}
 
 // the parent going away ends the session
 process.on("disconnect", () => process.exit(0));

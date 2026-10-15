@@ -403,10 +403,11 @@ export class PenpotMcpServer {
                   this.httpServer!.close((error) => (error ? reject(error) : resolve()));
               })
             : Promise.resolve();
+        // first, so the executions in progress answer their requests while the connections are still open
+        await this.executorPool?.close();
         await this.mcpHandler.close();
         await httpClosed;
         await this.pluginBridge.close();
-        await this.executorPool?.close();
         await this.redisBridge?.close();
         if (this.replServer) {
             await this.replServer.stop();

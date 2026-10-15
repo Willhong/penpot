@@ -45,7 +45,14 @@ export class ExecutorRuntime {
     private phase: "idle" | "running" | "saving" = "idle";
     private cancelRequested = false;
 
-    constructor(private readonly config: ExecutorRuntimeConfig) {}
+    /**
+     * @param config - settings of the process
+     * @param onSaving - tells the MCP server that the execution starts saving; resolves once it is sent
+     */
+    constructor(
+        private readonly config: ExecutorRuntimeConfig,
+        private readonly onSaving: () => Promise<void> = async () => undefined
+    ) {}
 
     /**
      * Boots the workspace for the user of `token` and builds the server Plugin API.
@@ -143,6 +150,7 @@ export class ExecutorRuntime {
             throw new ExecutorError("cancelled", "the execution was cancelled before its save");
         }
         this.phase = "saving";
+        await this.onSaving();
         let commit;
         try {
             commit = await this.engine.finishExecution(params.settleTimeoutMs ?? this.config.settleTimeoutMs);

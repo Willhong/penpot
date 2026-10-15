@@ -99,9 +99,9 @@ export class RedisLedgerStore implements RequestLedgerStore {
  * window (10 minutes) gets the first run's result instead of running again, and a retry that arrives while
  * the first run is still going waits for it.
  *
- * A failure that saved nothing is not recorded, so the client may retry it. A run interrupted by a restart
- * leaves its claim behind: a retry then gets an error saying its outcome is unknown, rather than possibly
- * applying the change twice.
+ * A failure that saved nothing is not recorded, so the client may retry it. A run that may have saved (its
+ * process ended while saving) or that a restart interrupted leaves its claim behind: a retry then gets an
+ * error saying its outcome is unknown, rather than possibly applying the change twice.
  */
 export class RequestLedger {
     private readonly logger = createLogger("RequestLedger");
@@ -157,7 +157,9 @@ export class RequestLedger {
             await this.store.complete(key, result, this.ttlMs);
             return result;
         } catch (error) {
-            if (error instanceof ExecutorError && error.saved) {
+            if (error instanceof ExecutorError && error.saved === "unknown") {
+                // keep the claim: a retry must not apply the change a second time
+            } else if (error instanceof ExecutorError && error.saved) {
                 await this.store.complete(
                     key,
                     { result: null, log: "", commit: null, engine: { frontendVersion: null, renderWasm: null } },

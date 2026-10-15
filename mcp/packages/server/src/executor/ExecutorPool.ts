@@ -57,6 +57,12 @@ export class ExecutorPool {
     private running = 0;
     private readonly idleTimer: NodeJS.Timeout;
     private readonly ledger: RequestLedger;
+    /** executions in progress, with their request ID records */
+    private readonly inProgress = new Set<Promise<unknown>>();
+    private closing = false;
+
+    /** how long a shutdown lets the executions in progress end (a save in progress completes) */
+    private static readonly SHUTDOWN_GRACE_MS = 3000;
 
     constructor(private readonly config: ExecutorConfig) {
         this.ledger = new RequestLedger(
@@ -78,18 +84,32 @@ export class ExecutorPool {
      * @param requestId - the client's ID of this request; a retry with the same ID within 10 minutes gets the
      *   first run's result instead of running again (D5)
      */
-    async execute(
+    execute(
         token: string,
         sessionName: string,
         params: ExecuteParams,
         signal?: AbortSignal,
         requestId?: string
     ): Promise<ExecutionResult> {
-        if (requestId) {
-            return this.ledger.once(ExecutorConfig.fingerprint(token), requestId, () =>
-                this.execute(token, sessionName, params, signal)
-            );
-        }
+        const execution = requestId
+            ? this.ledger.once(ExecutorConfig.fingerprint(token), requestId, () =>
+                  this.enqueue(token, sessionName, params, signal)
+              )
+            : this.enqueue(token, sessionName, params, signal);
+        this.inProgress.add(execution);
+        execution.then(
+            () => this.inProgress.delete(execution),
+            () => this.inProgress.delete(execution)
+        );
+        return execution;
+    }
+
+    private enqueue(
+        token: string,
+        sessionName: string,
+        params: ExecuteParams,
+        signal?: AbortSignal
+    ): Promise<ExecutionResult> {
         const userKey = ExecutorConfig.fingerprint(token);
         const key = `${userKey}:${sessionName}`;
         let session = this.sessions.get(key);
@@ -107,6 +127,10 @@ export class ExecutorPool {
         params: ExecuteParams,
         signal?: AbortSignal
     ): Promise<ExecutionResult> {
+        if (this.closing) {
+            // queued behind an execution the shutdown cancelled: do not start another process
+            throw new ExecutorError("cancelled", "the MCP server is shutting down");
+        }
         this.acquire(session.userKey);
         const started = Date.now();
         let outcome = "ok";
@@ -172,14 +196,20 @@ export class ExecutorPool {
     }
 
     /**
-     * Ends every executor process.
+     * Ends every executor process. Executions in progress are cancelled (one that is saving completes its
+     * save) and their request ID records settled before the ledger closes.
      */
     async close(): Promise<void> {
         clearInterval(this.idleTimer);
-        await this.ledger.close();
-        for (const session of this.sessions.values()) {
-            (await session.started?.catch(() => null))?.kill(null);
-        }
+        this.closing = true;
+        const processes = await Promise.all(
+            [...this.sessions.values()].map((session) => session.started?.catch(() => null) ?? null)
+        );
+        await Promise.all(
+            processes.map((process) => process?.shutdown(ExecutorPool.SHUTDOWN_GRACE_MS) ?? Promise.resolve())
+        );
         this.sessions.clear();
+        await Promise.allSettled([...this.inProgress]);
+        await this.ledger.close();
     }
 }

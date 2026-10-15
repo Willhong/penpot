@@ -365,10 +365,12 @@ return 1;""", fileId=self.file_id)
 def restart_mcp(hard=False):
     """Restarts the MCP server: Ctrl-C (it stops, its executors get the signal too), or SIGKILL of the server
     alone, as a crash would."""
-    stop = ("pkill -9 -f 'dist/[i]ndex.js --multi-user'; sleep 2" if hard
-            else "tmux send-keys -t mcpv:mcp C-c; sleep 2")
+    stop = ("pkill -9 -f 'dist/[i]ndex.js --multi-user'" if hard
+            else "tmux send-keys -t mcpv:mcp C-c")
+    # the window's shell takes the restart only once the old server has ended
+    wait = "for i in $(seq 1 100); do pgrep -f 'dist/[i]ndex.js --multi-user' >/dev/null || break; sleep 0.2; done; sleep 1"
     subprocess.run(["docker", "exec", "-u", "penpot", mcpv.MAIN, "bash", "-lc",
-                    f"{stop}; tmux send-keys -t mcpv:mcp Up enter"], check=True)
+                    f"{stop}; {wait}; tmux send-keys -t mcpv:mcp Up enter"], check=True)
     for _ in range(60):
         try:
             mcp_client.Client(mcpv.token("editor", "mcp"), executor="server")

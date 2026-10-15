@@ -30,9 +30,14 @@ export type ExecutorErrorCode =
 export interface ExecutorErrorData {
     code: ExecutorErrorCode;
     message: string;
-    /** whether anything was saved before the failure; always false except for a failure after the save */
-    saved: boolean;
+    /**
+     * whether anything was saved before the failure: false except for a failure after the save, and
+     * "unknown" when the process ended while saving (the backend may have applied the save)
+     */
+    saved: SavedState;
 }
+
+export type SavedState = boolean | "unknown";
 
 /**
  * Commit report of a write: what was saved and which derived values were completed.
@@ -113,6 +118,12 @@ export type ExecutorRequest =
     | { id: number; type: "status" }
     /** cancels the running execution if it has not started saving (D6); answers whether it did */
     | { id: number; type: "cancel" };
+
+/**
+ * Notice sent by an executor process outside any response: the execution in progress starts saving, so
+ * from then on its process must not be ended as if nothing was saved.
+ */
+export type ExecutorNotice = { notice: "saving" };
 
 /**
  * Response sent by an executor process, correlated by request ID.

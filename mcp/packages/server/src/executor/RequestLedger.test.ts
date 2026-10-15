@@ -56,6 +56,22 @@ describe("RequestLedger", () => {
         assert.equal(retry.replayed, undefined);
     });
 
+    it("keeps the claim of a run that may have saved, so a retry does not apply it twice", async () => {
+        const ledger = new RequestLedger(new MemoryLedgerStore());
+        let runs = 0;
+        await assert.rejects(
+            ledger.once("user", "r5", async () => {
+                runs++;
+                throw new ExecutorError("resource-limit", "ended while saving", "unknown");
+            })
+        );
+        await assert.rejects(
+            ledger.once("user", "r5", async () => result(++runs)),
+            (error: unknown) => error instanceof ExecutorError && error.code === "precondition-failed"
+        );
+        assert.equal(runs, 1);
+    });
+
     it("refuses to rerun a request whose earlier attempt left no outcome", async () => {
         const store = new MemoryLedgerStore();
         // an attempt that started and was never completed nor released (the server died meanwhile)

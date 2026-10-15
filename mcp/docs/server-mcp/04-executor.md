@@ -58,7 +58,9 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | `status` | — | `ExecutorStatus` |
 | `cancel` | — | 코드 실행 중이면 `true`(그 실행은 `cancelled`로 끝남), 저장 중이면 `false` |
 
-실패는 `{code, message, saved}`다. `code`는 `03` §7의 오류 코드다. token은 환경 변수가 아니라 `init` 요청으로만 건넨다.
+실패는 `{code, message, saved}`다. `code`는 `03` §7의 오류 코드다. `saved`는 `false`, `true`, 또는 저장 중에 프로세스가 끝나 저장이 반영됐는지 모를 때 `"unknown"`이다. token은 환경 변수가 아니라 `init` 요청으로만 건넨다.
+
+실행기는 저장 요청을 보내기 전에 응답과 별개로 `{notice: "saving"}`을 보낸다. 그 뒤에 프로세스가 끝나면(시간 초과, 메모리, 종료 신호) MCP server는 "저장 없음" 대신 `saved: "unknown"`으로 답하고, 같은 `requestId`의 재시도를 거부한다(D5). 저장 중에 받은 종료 신호는 저장의 응답을 보낸 뒤에 따른다. 그 밖의 때에는 신호를 받는 즉시 끝난다(저장 전 취소).
 
 ### 실행기 프로세스 → frontend 빌드 (`app.executor.api` export)
 
@@ -98,6 +100,8 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | `ifUnchangedSinceRevn` | D4: 파일이 그 revn 뒤로 바뀌었으면 실행·저장하지 않고 `precondition-failed`. 시작할 때와 저장 직전에 확인한다 |
 
 클라이언트가 요청을 취소하거나 연결을 끊으면 실행기에 취소를 보낸다(D6).
+
+MCP server가 멈출 때(`SIGINT`/`SIGTERM`)는 연결을 닫기 전에 실행기부터 정리한다. 진행 중인 실행에 취소를 보내고 3초까지 기다린 뒤(저장 중이면 저장을 마친다) 프로세스를 끝낸다. 요청 ID 기록이 정리된 다음에 기록 저장소(Redis)를 닫는다.
 
 ## 4. 실행 1회의 순서
 
