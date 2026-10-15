@@ -22,11 +22,13 @@
    [app.features.fdata :as feat.fdata]
    [app.loggers.audit :as-alias audit]
    [app.loggers.webhooks :as-alias webhooks]
+   [app.msgbus :as mbus]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.files :as files]
    [app.rpc.commands.profile :as profile]
    [app.rpc.commands.teams :as teams]
    [app.rpc.doc :as-alias doc]
+   [app.rpc.helpers :as rph]
    [app.rpc.quotes :as quotes]
    [app.rpc.retry :as rtry]
    [app.util.pointer-map :as pmap]
@@ -193,6 +195,18 @@
      FROM file AS f
     WHERE f.id = ?
       FOR UPDATE")
+
+(defn- notify-change
+  "Returns `result` set to tell the sessions that have file `file-id` open
+  that its comments changed, once the request completes: after its
+  transaction commits, so they never fetch a change that is not there."
+  [result cfg file-id thread-id]
+  (rph/with-defer (if (nil? result) (rph/wrap) result)
+    #(mbus/pub! (::mbus/msgbus cfg)
+                :topic file-id
+                :message {:type :comment-change
+                          :file-id file-id
+                          :thread-id thread-id})))
 
 (defn- get-next-seqn
   [conn file-id]
@@ -489,7 +503,8 @@
     (let [params (assoc params ::file file)
           thread (db/tx-run! cfg create-comment-thread params)]
 
-      (vary-meta thread assoc ::audit/props thread))))
+      (-> (vary-meta thread assoc ::audit/props thread)
+          (notify-change cfg file-id (:id thread))))))
 
 (defn- create-comment-thread
   [{:keys [::db/conn] :as cfg}
@@ -583,7 +598,7 @@
     (db/update! conn :comment-thread
                 {:is-resolved is-resolved}
                 {:id id})
-    nil))
+    (notify-change nil cfg file-id id)))
 
 ;; --- COMMAND: Add Comment
 
@@ -653,7 +668,8 @@
 
       (send-comment-emails! cfg profile comment thread file)
 
-      (vary-meta comment assoc ::audit/props comment))))
+      (-> (vary-meta comment assoc ::audit/props comment)
+          (notify-change cfg file-id thread-id)))))
 
 ;; --- COMMAND: Update Comment
 
@@ -701,7 +717,7 @@
                        (db/encode-pgarray conn "uuid"))}
                   {:id thread-id}
                   {::db/return-keys false})
-      nil)))
+      (notify-change nil cfg file-id thread-id))))
 
 ;; --- COMMAND: Delete Comment Thread
 
@@ -724,7 +740,7 @@
 
     (db/delete! conn :comment-thread {:id id}
                 {::db/return-keys false})
-    nil))
+    (notify-change nil cfg file-id id)))
 
 ;; --- COMMAND: Delete comment
 
@@ -752,7 +768,7 @@
 
     (db/delete! conn :comment {:id id}
                 {::db/return-keys false})
-    nil))
+    (notify-change nil cfg file-id thread-id)))
 
 ;; --- COMMAND: Update comment thread position
 
@@ -777,7 +793,7 @@
                  :frame-id frame-id}
                 {:id id}
                 {::db/return-keys false})
-    nil))
+    (notify-change nil cfg file-id id)))
 
 ;; --- COMMAND: Update comment frame
 
@@ -800,7 +816,7 @@
                  :frame-id frame-id}
                 {:id id}
                 {::db/return-keys false})
-    nil))
+    (notify-change nil cfg file-id id)))
 
 (def ^:private
   schema:mark-all-threads-as-read

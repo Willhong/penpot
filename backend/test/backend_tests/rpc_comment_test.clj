@@ -11,9 +11,10 @@
    [app.common.uuid :as uuid]
    [app.db :as db]
    [app.http :as http]
-   [app.rpc :as-alias rpc]
+   [app.rpc :as rpc]
    [app.rpc.commands.comments :as comments]
    [app.rpc.cond :as cond]
+   [app.rpc.helpers :as rph]
    [app.rpc.quotes :as-alias quotes]
    [backend-tests.helpers :as th]
    [clojure.test :as t]
@@ -478,3 +479,69 @@
                               :content "member comment"
                               :frame-id uuid/zero})]
         (t/is (th/success? out))))))
+
+(defn- command-completed!
+  "Runs a command, then the hooks the HTTP handler runs once a request
+  completes. `th/command!` stops before them and unwraps the result, which
+  carries them."
+  [data]
+  (let [[_ method-fn] (get-in th/*system* [:app.rpc/methods (::th/type data)])
+        result        (method-fn (#'th/prepare-rpc-params data))]
+    (doseq [hook-fn (::rpc/before-complete-fns (meta result))]
+      (hook-fn))
+    {:result (cond-> result (rph/wrapped? result) deref)}))
+
+(t/deftest comment-changes-are-published-to-the-file
+  ;; Open screens learn of comments other sessions add, resolve or remove
+  ;; through the file topic, once the change is committed.
+  (with-mocks [pub-mock {:target 'app.msgbus/pub! :return nil}]
+    (let [profile   (th/create-profile* 1 {:is-active true})
+          team      (th/create-team* 1 {:profile-id (:id profile)})
+          project   (th/create-project* 1 {:team-id (:id team) :profile-id (:id profile)})
+          file      (th/create-file* 1 {:profile-id (:id profile) :project-id (:id project)})
+          page-id   (get-in file [:data :pages 0])
+          published (fn []
+                      (->> (:call-args-list @pub-mock)
+                           (map (fn [[_ & {:keys [topic message]}]] [topic (:type message) (:thread-id message)]))
+                           (filter #(= :comment-change (second %)))))
+          out       (command-completed! {::th/type :create-comment-thread
+                                         ::rpc/profile-id (:id profile)
+                                         :file-id (:id file)
+                                         :page-id page-id
+                                         :position (gpt/point 0)
+                                         :content "hello"
+                                         :frame-id uuid/zero})
+          thread    (:result out)]
+      (t/is (uuid? (:id thread)))
+      (t/is (= [[(:id file) :comment-change (:id thread)]] (published)))
+
+      (command-completed! {::th/type :update-comment-thread
+                           ::rpc/profile-id (:id profile)
+                           :id (:id thread)
+                           :is-resolved true})
+      (t/is (= 2 (count (published))))
+
+      (command-completed! {::th/type :delete-comment-thread
+                           ::rpc/profile-id (:id profile)
+                           :id (:id thread)})
+      (t/is (= 3 (count (published)))))))
+
+(t/deftest a-failed-comment-notification-keeps-the-comment
+  ;; The notification goes out after the commit and its failure is ignored:
+  ;; the comment stays, and open screens catch up when they reconnect.
+  (with-mocks [_pub-mock {:target 'app.msgbus/pub! :return (fn [& _] (throw (ex-info "bus down" {})))}]
+    (let [profile (th/create-profile* 1 {:is-active true})
+          team    (th/create-team* 1 {:profile-id (:id profile)})
+          project (th/create-project* 1 {:team-id (:id team) :profile-id (:id profile)})
+          file    (th/create-file* 1 {:profile-id (:id profile) :project-id (:id project)})
+          [_ method-fn] (get-in th/*system* [:app.rpc/methods :create-comment-thread])
+          result  (method-fn (#'th/prepare-rpc-params
+                              {::th/type :create-comment-thread
+                               ::rpc/profile-id (:id profile)
+                               :file-id (:id file)
+                               :page-id (get-in file [:data :pages 0])
+                               :position (gpt/point 0)
+                               :content "kept"
+                               :frame-id uuid/zero}))]
+      (t/is (= result (#'rpc/handle-before-comple-hook result (meta result))))
+      (t/is (= 1 (count (th/db-query :comment-thread {:file-id (:id file)})))))))

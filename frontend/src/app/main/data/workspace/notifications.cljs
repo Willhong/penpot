@@ -13,6 +13,7 @@
    [app.common.time :as ct]
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
+   [app.main.data.comments :as dcmt]
    [app.main.data.common :as dc]
    [app.main.data.helpers :as dsh]
    [app.main.data.modal :as modal]
@@ -94,10 +95,12 @@
                                   (rx/mapcat #(->> (rx/from initmsg)
                                                    (rx/map dws/send))))
 
-                             ;; and catch up with what was published meanwhile
+                             ;; and catch up with what was published meanwhile,
+                             ;; comments included (they are not file changes)
                              (->> stream
                                   (rx/filter (ptk/type? ::dws/opened))
-                                  (rx/map #(fetch-missed-changes file-id)))
+                                  (rx/mapcat #(rx/of (fetch-missed-changes file-id)
+                                                     (dcmt/refresh-comment-threads file-id nil))))
 
                              ;; Emit presence event for current user;
                              ;; this is because websocket server don't
@@ -164,6 +167,7 @@
     :disconnect              (handle-presence msg)
     :pointer-update          (handle-pointer-update msg)
     :file-change             (handle-file-change msg)
+    :comment-change          (dcmt/refresh-comment-threads (:file-id msg) (:thread-id msg))
     :file-deleted            (handle-file-deleted msg)
     :file-restored           (handle-file-restored msg)
     :library-change          (handle-library-change msg)

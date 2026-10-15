@@ -8,6 +8,7 @@
   (:require
    [app.common.test-helpers.files :as cthf]
    [app.common.uuid :as uuid]
+   [app.main.data.comments :as dcmt]
    [app.main.data.workspace.notifications :as dwn]
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
@@ -79,3 +80,34 @@
       (t/is (= [:app.main.data.websocket/send-message] (:types (viewport-sends state sent true)))))
     (t/testing "a session without a screen sends nothing"
       (t/is (= [] (:types (viewport-sends (update state :workspace-local dissoc :vbox) nil true)))))))
+
+(t/deftest comment-change-replaces-the-threads-and-refetches-an-open-one
+  ;; A `:comment-change` notification refreshes the threads in place: the
+  ;; ones another session deleted go, with their pins, and the comments of an
+  ;; open thread are fetched again.
+  (let [file-id (uuid/next)
+        page-id (uuid/next)
+        kept    (uuid/next)
+        gone    (uuid/next)
+        state   {:comment-threads {kept {:id kept} gone {:id gone}}
+                 :comments {kept {}}
+                 :files {file-id {:data {:pages-index {page-id {:comment-thread-positions
+                                                                {kept {:position {:x 0 :y 0}}
+                                                                 gone {:position {:x 9 :y 9}}}}}}}}}
+        events  (atom [])]
+    (with-redefs [rp/cmd! (mock/stub (fn [_ _]
+                                       (rx/of [{:id kept :file-id file-id :page-id page-id
+                                                :position {:x 5 :y 6} :frame-id uuid/zero}])))]
+      (->> (ptk/watch (dcmt/refresh-comment-threads file-id kept) state (rx/empty))
+           (rx/subs! #(swap! events conj %))))
+    (let [state (reduce (fn [state event]
+                          (cond
+                            (fn? event) (event state)
+                            (ptk/update? event) (ptk/update event state)
+                            :else state))
+                        state @events)]
+      (t/is (= #{kept} (set (keys (:comment-threads state)))))
+      (t/is (= {kept {:position {:x 5 :y 6} :frame-id uuid/zero}}
+               (get-in state [:files file-id :data :pages-index page-id :comment-thread-positions])))
+      (t/is (some #(= ::dcmt/retrieve-comments (ptk/type %)) (remove fn? @events))))))
+

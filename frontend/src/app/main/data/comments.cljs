@@ -436,6 +436,40 @@
          (when (:workspace-local state)
            (rx/of (dtm/fetch-members))))))))
 
+(declare retrieve-comments)
+
+(defn refresh-comment-threads
+  "Fetches the comment threads of `file-id` again after another session
+  changed them (`:comment-change` notification), replacing those in state
+  without clearing them first, so open screens do not flicker. Refetches the
+  comments of `thread-id` too when they are loaded."
+  [file-id thread-id]
+  (ptk/reify ::refresh-comment-threads
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [share-id (-> state :viewer-local :share-id)]
+        (rx/merge
+         (->> (rp/cmd! :get-comment-threads {:file-id file-id :share-id share-id})
+              (rx/mapcat
+               (fn [threads]
+                 (let [ids (into #{} (map :id) threads)]
+                   (rx/of
+                    ;; drop the threads that are gone, with their pins
+                    (fn [state]
+                      (-> state
+                          (assoc :comment-threads {})
+                          (update-in [:files file-id :data :pages-index]
+                                     (fn [pages]
+                                       (d/update-vals pages
+                                                      (fn [page]
+                                                        (cond-> page
+                                                          (contains? page :comment-thread-positions)
+                                                          (update :comment-thread-positions
+                                                                  #(into {} (filter (fn [[id _]] (contains? ids id))) %)))))))))
+                    (comment-threads-fetched threads))))))
+         (when (and (some? thread-id) (contains? (:comments state) thread-id))
+           (rx/of (retrieve-comments thread-id))))))))
+
 (defn retrieve-comments
   [thread-id]
   (dm/assert! (uuid? thread-id))

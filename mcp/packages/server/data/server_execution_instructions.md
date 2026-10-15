@@ -24,6 +24,8 @@ Where this section differs from the rest of the overview, this section applies.
 * Listeners added with `penpot.on` stay until the session ends. They hear this session's changes and the changes others
   save. They cannot send you anything; record what they see in `storage` and read it in a later call. Remove them with
   `penpot.off` when you no longer need them.
+* Comments (`addCommentThread`, `reply`, `resolved`, `remove`) are written at once, as in a browser: an error later
+  in the same call does not undo them. Open screens show them without a reload.
 * Error codes: `ui-only` (needs a browser), `forbidden`, `not-found` (also for a file you may only view),
   `validation` (invalid value), `precondition-failed`, `revn-conflict`, `vern-conflict`, `cancelled`,
   `resource-limit` (120 s or memory exceeded), `execution-error` (your code threw), `engine-error`.
