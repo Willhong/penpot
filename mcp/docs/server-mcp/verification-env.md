@@ -57,6 +57,13 @@ scripts/mcp-verify-env destroy --yes # 이 스택 볼륨까지 제거
 - 실행 중 메모리: main 컨테이너 약 7.2 GB, 나머지 컨테이너 합계 약 0.3 GB.
 - pnpm store(`.pnpm-store/`)와 `node_modules`는 소스 checkout 안에 생긴다(gitignore). Maven·cargo 캐시는 `penpot-mcpverify_user_data` 볼륨에 남아 다음 기동이 빨라진다.
 
+### 서버 MCP 실행기 (PEN-22)
+
+- MCP server는 `PENPOT_MCP_EXECUTOR=optional`로 뜬다. 기본은 지금처럼 브라우저 플러그인이고, 연결 URL에 `executor=server`를 붙이면 브라우저 없이 서버 실행기에서 돈다: `http://localhost:4501/mcp?userToken=<MCP token>&executor=server`. `MCPV_MCP_EXECUTOR=server`로 띄우면 기본이 서버 실행이다.
+- tmux 창 `executor`가 frontend 컴파일이 끝난 뒤 `frontend/scripts/build-executor compile`을 한 번 돌린다. `status`/`wait`의 `executor ready`가 그 결과다. cljs를 고친 뒤에는 `frontend`에서 `npx shadow-cljs compile executor`를 다시 돌리고 MCP 창을 재시작한다(실행기 프로세스가 새 코드를 읽도록).
+- backend의 `mcp` 공유 키는 `backend/scripts/_env`의 개발용 값이고, MCP server에 같은 값을 준다.
+- 시험 계정 owner·editor의 renderer 설정은 wasm으로 바꿔 두었다(브라우저 기본값은 `:svg`). 브라우저와 서버의 계산 비교는 wasm 기준이다(D13).
+
 ## 테스트 데이터 (`seed`)
 
 | 역할 | 계정 | 팀 권한 | 용도 |

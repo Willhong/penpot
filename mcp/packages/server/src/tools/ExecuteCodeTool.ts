@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { PenpotMcpServer } from "../PenpotMcpServer";
 import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
 import { ExecuteCodeTaskParams } from "@penpot/mcp-common";
+import { ExecutorError } from "../executor/ExecutorError";
 
 /**
  * Arguments class for ExecuteCodeTool
@@ -17,6 +18,19 @@ export class ExecuteCodeArgs {
             .min(1, "Code cannot be empty")
             .describe("The JavaScript code to execute in the plugin context."),
         sessionId: Tool.SESSION_ID_SCHEMA,
+        fileId: z
+            .string()
+            .uuid()
+            .optional()
+            .describe(
+                "Server-side execution only: the file to open before running the code (like penpotMgmt.openFile). " +
+                    "Without it, the code runs on the file the session opened last."
+            ),
+        pageId: z
+            .string()
+            .uuid()
+            .optional()
+            .describe("Server-side execution only: the page of `fileId` to open (default: its first page)."),
     };
 
     /**
@@ -25,6 +39,10 @@ export class ExecuteCodeArgs {
     code!: string;
 
     sessionId?: string;
+
+    fileId?: string;
+
+    pageId?: string;
 }
 
 /**
@@ -63,11 +81,41 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
             "to track what your code is doing, but you should *only* do so only if there is an ACTUAL NEED for this! " +
             "VERY IMPORTANT: Don't use logging prematurely! NEVER log the data you are returning, as you will otherwise receive it twice!\n" +
             "VERY IMPORTANT: In general, try a simple approach first, and only if it fails, try more complex code that involves " +
-            "handling different cases (in particular error cases) and that applies logging."
+            "handling different cases (in particular error cases) and that applies logging." +
+            (this.mcpServer.executorPool ? ExecuteCodeTool.SERVER_MODE_NOTE : "")
         );
     }
 
-    protected async executeCore(args: ExecuteCodeArgs): Promise<ToolResponse> {
+    /**
+     * Addition to the description when the code runs in a server-side executor.
+     */
+    private static readonly SERVER_MODE_NOTE =
+        "\nSERVER-SIDE EXECUTION (when this connection uses it): the code runs on the Penpot server; no browser " +
+        "needs to be open.\n" +
+        "Open a file first, with the `fileId` argument or `await penpotMgmt.openFile(fileId)`; the session " +
+        "(`sessionId`, default 'default') keeps that file open, and `storage`, across calls.\n" +
+        "Everything one call changes is saved together when the code returns; if the code throws, nothing is saved. " +
+        "The response has `result`, `log`, `commit` (saved revn, changed shape ids, whether layout and text values " +
+        "were completed) and `engine`.\n" +
+        "Members that need a browser window (`penpot.ui`, `penpot.viewport`, `openViewer()`, " +
+        "`openPage(page, true)`, `closePlugin()`) fail with the error code `ui-only`.";
+
+    protected async executeCore(args: ExecuteCodeArgs, signal?: AbortSignal): Promise<ToolResponse> {
+        const pool = this.mcpServer.executorPool;
+        if (pool && this.getSessionContext()?.serverExecution) {
+            const token = this.getSessionContext()?.userToken;
+            if (!token) {
+                throw new ExecutorError("forbidden", "server-side execution needs the user's MCP token (userToken)");
+            }
+            const result = await pool.execute(
+                token,
+                args.sessionId ?? "default",
+                { code: args.code, fileId: args.fileId, pageId: args.pageId },
+                signal
+            );
+            return new TextResponse(JSON.stringify(result, null, 2));
+        }
+
         const taskParams: ExecuteCodeTaskParams = { code: args.code };
         const task = new ExecuteCodePluginTask(taskParams);
         const result = await this.mcpServer.pluginBridge.executePluginTask(task, args.sessionId);

@@ -78,7 +78,21 @@ if [ "$WITH_EXPORTER" = "true" ]; then
     service exporter exporter "PENPOT_INTERNAL_URI=http://localhost:3450 ./scripts/wait-and-start.sh"
 fi
 
+# Server-side MCP executor (PEN-22): the frontend `:executor` bundle, built
+# once the frontend compiler is up (it reuses the watch's shadow-cljs server)
+# and render-wasm is built. `optional` keeps the browser plugin as the default
+# and lets a client pick the executor with `?executor=server`, so both paths
+# can be compared on one MCP server.
+service executor frontend "until grep -aq '\[:main\] Build completed' $LOG_DIR/frontend.log; do sleep 5; done; ./scripts/build-executor compile && echo '[mcp-verify] executor bundle ready'"
+
 MCP_ENV="PENPOT_MCP_SERVER_HOST=0.0.0.0 PENPOT_MCP_REMOTE_MODE=true PENPOT_TENANT=$PENPOT_TENANT"
+MCP_ENV="$MCP_ENV PENPOT_MCP_EXECUTOR=${MCPV_MCP_EXECUTOR:-optional}"
+MCP_ENV="$MCP_ENV PENPOT_MCP_EXECUTOR_BUNDLE=$HOME/penpot/frontend/target/executor/executor.js"
+MCP_ENV="$MCP_ENV PENPOT_MCP_EXECUTOR_WASM_DIR=$HOME/penpot/frontend/resources/public/js"
+MCP_ENV="$MCP_ENV PENPOT_MCP_EXECUTOR_PUBLIC_URI=http://localhost:3450"
+# devenv value, the same as backend/scripts/_env
+MCP_ENV="$MCP_ENV PENPOT_MCP_SHARED_KEY=super-secret-mcp-key"
+MCP_ENV="$MCP_ENV PENPOT_FLAGS='enable-mcp enable-access-tokens'"
 if [ "$MCP_MODE" = "multi" ]; then
     # Valkey DB 1 keeps the MCP session claims apart from the backend (DB 0).
     service mcp mcp "$MCP_ENV PENPOT_MCP_REDIS_URI=redis://valkey/1 pnpm run start:multi-user"

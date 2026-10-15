@@ -54,11 +54,12 @@
             (mw/constant-time-eq? key expected))))))
 
 (defn- resolve-mcp-claims
-  "Decodes an MCP token presented by the server-side MCP executor. Returns the
-  auth data unchanged for any other request."
-  [cfg request {:keys [type token claims] :as auth-data}]
+  "Decodes the token of a request from the server-side MCP executor as an MCP
+  token: that service authenticates its users with their MCP token only (D2),
+  so an access token it presents authenticates nobody. Returns the auth data
+  unchanged for any other request."
+  [cfg request {:keys [type token] :as auth-data}]
   (if (and (= :token type)
-           (nil? claims)
            (mcp-service-request? request (::setup/shared-keys cfg)))
     (assoc auth-data :claims (decode-mcp-token cfg token))
     auth-data))

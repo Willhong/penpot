@@ -151,12 +151,16 @@
         (t/is (= (:id profile) (:app.http.access-token/profile-id response)))
         (t/is (= "mcp" (:app.http.access-token/type response)))))
 
-    (t/testing "the MCP shared key never turns an access token into an MCP one"
+    (t/testing "the MCP service authenticates with MCP tokens only"
       (let [claims   (app.http.access-token/decode-token th/*system* (:token api-token))
             response (handler (request {:type :token :token (:token api-token) :claims claims}
                                        {"x-shared-key" "mcp mcp-secret"}))]
-        (t/is (= (:id profile) (:app.http.access-token/profile-id response)))
-        (t/is (not= "mcp" (:app.http.access-token/type response)))))
+        (t/is (nil? (:app.http.access-token/profile-id response)))))
+
+    (t/testing "an access token keeps working without the MCP shared key"
+      (let [claims   (app.http.access-token/decode-token th/*system* (:token api-token))
+            response (handler (request {:type :token :token (:token api-token) :claims claims} {}))]
+        (t/is (= (:id profile) (:app.http.access-token/profile-id response)))))
 
     (t/testing "a deleted MCP token is rejected even from the MCP service"
       (db/delete! th/*system* :access-token {:id (:id mcp-token)})

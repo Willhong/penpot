@@ -136,7 +136,22 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 - 빌드: frontend `./scripts/build-executor [compile|release]`(render-wasm frontend 빌드와 번역 파일이 먼저 있어야 한다), mcp `pnpm run build`(`dist/executor-child.js` 포함).
 - 검증 스택은 `optional`로 띄운다. 같은 MCP server에서 브라우저 경로와 서버 경로를 비교할 수 있다(`verification-env.md`).
 
-## 9. 브라우저와 다르게 처리한 곳
+## 9. PEN-3 확인 결과 (2026-10-15, `experiments/pen3_vertical_slice.py`)
+
+editor가 MCP token과 `?executor=server`로 `execute_code`를 부른다. 브라우저에서 Connect를 누르지 않는다.
+
+| 확인 | 결과 |
+|---|---|
+| 관찰 탭 두 개가 열린 상태에서 사각형 저장 | 저장 성공(revn 0→1). owner·editor 탭에 새로고침 없이 MCP 응답 뒤 46–186 ms에 나타남(D7 1초 이내). backend 재조회 x·y·크기·색이 같음 |
+| owner 탭 새로고침 | 사각형이 남아 있음 |
+| 두 탭을 닫은 상태에서 두 번째 사각형 저장 | 0.05–0.09초, 저장 성공. 탭을 다시 열면 두 사각형 모두 보임 |
+| 플러그인 경로 | 연결된 세션 없음(`executor=plugin`은 실패) — Connect 불필요 |
+| 잘못된 token / 일반 API token | `forbidden`, 변경 없음 |
+| viewer / 팀 밖 사용자 / 없는 파일 | `not-found`, 변경 없음 |
+| 잘못된 입력 / 편집 뒤 예외 | `execution-error`, 변경 없음. 세션도 실패 전 상태로 돌아감 |
+| 첫 호출 | 프로세스 시작을 포함해 4–6초 |
+
+## 10. 브라우저와 다르게 처리한 곳
 
 | 곳 | 브라우저 | 실행기 | 이유 |
 |---|---|---|---|

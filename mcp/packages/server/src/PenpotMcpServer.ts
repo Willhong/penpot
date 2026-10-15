@@ -22,12 +22,16 @@ import { ReadTaigaIssueTool } from "./tools/ReadTaigaIssueTool";
 import { NreplClient } from "./NreplClient";
 import { ReplServer } from "./ReplServer";
 import { ApiDocs } from "./ApiDocs";
+import { ExecutorConfig } from "./executor/ExecutorConfig";
+import { ExecutorPool } from "./executor/ExecutorPool";
 
 /**
  * Session context for request-scoped data.
  */
 export interface SessionContext {
     userToken?: string;
+    /** whether this request's code runs in a server-side executor instead of the browser plugin */
+    serverExecution?: boolean;
 }
 
 /**
@@ -112,6 +116,15 @@ export class PenpotMcpServer {
     private httpServer?: HttpServer;
     private readonly mcpHandler: McpHttpHandler;
     public readonly pluginBridge: PluginBridge;
+
+    /**
+     * Pool of server-side executor processes; present when `PENPOT_MCP_EXECUTOR=server`, in which case
+     * `execute_code` runs without a browser (see `mcp/docs/server-mcp/`).
+     */
+    public readonly executorPool: ExecutorPool | null;
+
+    /** whether requests that do not choose run in the executor (`PENPOT_MCP_EXECUTOR=server`) */
+    private readonly serverExecutionByDefault: boolean;
     private readonly replServer: ReplServer | null;
     private apiDocs: ApiDocs;
     private readonly penpotHighLevelOverview: string;
@@ -152,6 +165,11 @@ export class PenpotMcpServer {
         this.replPort = parseInt(process.env.PENPOT_MCP_REPL_PORT ?? "4403", 10);
         this.tenant = process.env.PENPOT_TENANT ?? "default";
         const toolTimeoutSecs = parseInt(process.env.PENPOT_MCP_TOOL_TIMEOUT_S ?? "120", 10);
+
+        this.executorPool = ExecutorConfig.isEnabled(process.env)
+            ? new ExecutorPool(new ExecutorConfig(process.env))
+            : null;
+        this.serverExecutionByDefault = ExecutorConfig.isDefault(process.env);
 
         this.configLoader = new ConfigurationLoader(process.cwd());
         this.apiDocs = new ApiDocs();
@@ -289,7 +307,9 @@ export class PenpotMcpServer {
         );
 
         for (const tool of this.tools) {
-            server.registerTool(tool.name, tool.config, async (args) => tool.instance.execute(args));
+            server.registerTool(tool.name, tool.config, async (args, extra) =>
+                tool.instance.execute(args, extra?.mcpReq?.signal)
+            );
         }
 
         return server;
@@ -299,11 +319,26 @@ export class PenpotMcpServer {
         const handleMcpRequest = toNodeHandler(this.mcpHandler);
         this.app.all("/mcp", async (req, res) => {
             const userToken = req.query.userToken as string | undefined;
+            const serverExecution = this.selectServerExecution(req.query.executor as string | undefined);
             this.logger.info(
-                `Received MCP request: method=${req.body?.method ?? "<none>"}; userTokenFp=${PenpotMcpServer.tokenFingerprint(userToken)}`
+                `Received MCP request: method=${req.body?.method ?? "<none>"}; userTokenFp=${PenpotMcpServer.tokenFingerprint(userToken)}; serverExecution=${serverExecution}`
             );
-            await this.sessionContext.run({ userToken }, () => handleMcpRequest(req, res, req.body));
+            await this.sessionContext.run({ userToken, serverExecution }, () => handleMcpRequest(req, res, req.body));
         });
+    }
+
+    /**
+     * Decides where a request's code runs: in the executor when it is available and either the client asks
+     * for it (`?executor=server`) or it is the configured default; in the browser plugin otherwise.
+     */
+    private selectServerExecution(requested: string | undefined): boolean {
+        if (!this.executorPool) {
+            return false;
+        }
+        if (requested === "server" || requested === "plugin") {
+            return requested === "server";
+        }
+        return this.serverExecutionByDefault;
     }
 
     async start(): Promise<void> {
@@ -321,6 +356,7 @@ export class PenpotMcpServer {
                 );
                 this.logger.info(`Remote mode: ${this.isRemoteMode()}`);
                 this.logger.info(`DevEnv mode: ${this.isDevEnv()}`);
+                this.logger.info(`Server-side executor: ${this.executorPool ? "enabled" : "disabled"}`);
                 this.logger.info(`Modern Streamable HTTP endpoint: http://${this.host}:${this.port}/mcp`);
                 this.logger.info(`WebSocket server URL: ws://${this.host}:${this.webSocketPort}`);
 
@@ -356,6 +392,7 @@ export class PenpotMcpServer {
         await this.mcpHandler.close();
         await httpClosed;
         await this.pluginBridge.close();
+        await this.executorPool?.close();
         await this.redisBridge?.close();
         if (this.replServer) {
             await this.replServer.stop();

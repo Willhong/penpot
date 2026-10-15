@@ -151,6 +151,12 @@ function probe {
         echo "plugin    not ready"; ok=1
     fi
 
+    if docker exec "$MAIN" test -f /home/penpot/penpot/frontend/target/executor/translation.en.js 2>/dev/null; then
+        echo "executor  ready"
+    else
+        echo "executor  not ready"; ok=1
+    fi
+
     code="$(http-code -X POST -H 'content-type: application/json' \
         -H 'accept: application/json, text/event-stream' \
         -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' \
