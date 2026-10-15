@@ -16,13 +16,15 @@
 | [feature-inventory.md](feature-inventory.md) | PEN-1 | member·도구별 담당 티켓과 검증 시나리오 (생성 파일) | 미매핑 0 |
 | [verification-env.md](verification-env.md) | PEN-2 | 운영과 분리한 검증 스택 사용법 | 완료 |
 | [02-browser-dependency-research.md](02-browser-dependency-research.md) | PEN-7 | 기능별 브라우저 의존성, 서버 경로 대안, 실험 E1–E3 | 완료, 미확인 E4–E11 목록 |
-| [03-runtime-contract.md](03-runtime-contract.md) | PEN-8 | 실행 격리, 완료 단계, 계산·출력 계약, 동등성 기준, 오류 코드 | 기술 계약 확정, blocker E4–E7·E10, D10 확정 |
+| [03-runtime-contract.md](03-runtime-contract.md) | PEN-8 | 실행 격리, 완료 단계, 계산·출력 계약, 동등성 기준, 오류 코드 | 기술 계약 확정, E4 실증, blocker E5–E7·E10, D10 확정 |
 
 ## 도구
 
 - `tools/gen_inventory.py`: 기능 목록을 다시 만든다. `--check`는 미매핑 member가 있거나 생성 파일이 오래되면 실패한다.
 - `experiments/e1_server_write.py`: 브라우저 없는 저장, 권한·revn·중복 요청 경계를 시험한다.
 - `experiments/e3_headless_export.py`: headless wasm export와 Chromium export를 비교한다.
+- `experiments/e4_headless_compute.py`: 같은 Plugin API 코드를 브라우저(wasm 모드)와 headless 실행기에서 실행해 저장 결과를 비교한다.
+- `experiments/observe_write.sh` + `browser_observe.js`: 서버 저장이 관찰 브라우저 두 개에 나타나기까지의 시간을 잰다.
 - 검증 스택: 저장소 루트의 `scripts/mcp-verify-env`.
 
 ## 다음 구현 작업(PEN-22)이 시작할 때

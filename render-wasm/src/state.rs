@@ -245,6 +245,9 @@ impl State {
     }
 
     pub fn set_background_color(&mut self, color: skia::Color) {
+        if !has_render_state() {
+            return;
+        }
         get_render_state().set_background_color(color);
     }
 
@@ -286,26 +289,44 @@ impl State {
     }
 
     pub fn rebuild_tiles_shallow(&mut self) {
+        if !has_render_state() {
+            return;
+        }
         get_render_state().rebuild_tiles_shallow(&self.shapes);
     }
 
     pub fn rebuild_tiles(&mut self) {
+        if !has_render_state() {
+            return;
+        }
         get_render_state().rebuild_tiles_from(&self.shapes, None);
     }
 
     pub fn rebuild_tiles_from(&mut self, base_id: Option<&Uuid>) {
+        if !has_render_state() {
+            return;
+        }
         get_render_state().rebuild_tiles_from(&self.shapes, base_id);
     }
 
     pub fn rebuild_touched_tiles(&mut self) {
+        if !has_render_state() {
+            return;
+        }
         get_render_state().rebuild_touched_tiles(&self.shapes);
     }
 
     pub fn render_preview(&mut self, timestamp: i32) {
+        if !has_render_state() {
+            return;
+        }
         let _ = get_render_state().render_preview(&self.shapes, timestamp);
     }
 
     pub fn rebuild_modifier_tiles(&mut self, ids: &[Uuid]) -> Result<()> {
+        if !has_render_state() {
+            return Ok(());
+        }
         get_render_state().rebuild_modifier_tiles(&mut self.shapes, ids)
     }
 

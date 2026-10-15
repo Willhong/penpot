@@ -160,6 +160,38 @@
    {:test {:init-fn frontend-tests.runner/init
            :prepend-js ";if (typeof globalThis.navigator?.userAgent === 'undefined') { globalThis.navigator = {userAgent: ''}; };"}}}
 
+  ;; Server-side MCP executor: the workspace data layer and the plugin API
+  ;; under plain Node, with render-wasm booted headless (no DOM, no WebGL,
+  ;; no browser). See mcp/docs/server-mcp/.
+  :executor
+  {:target :esm
+   :runtime :node
+   :output-dir "target/executor/"
+   :devtools {:enabled false
+              :console-support false}
+   :js-options {:js-provider :import}
+
+   :modules
+   {:executor {:init-fn app.executor.main/init
+               ;; `app.config` reads its settings from globals at load time,
+               ;; as the browser's config.js provides them.
+               :prepend-js ";globalThis.penpotPublicURI ??= process.env.PENPOT_PUBLIC_URI; globalThis.penpotFlags ??= process.env.PENPOT_FLAGS ?? '';"}}
+
+   :compiler-options
+   {:output-feature-set :es2020
+    :output-wrapper false
+    :warnings {:fn-deprecated false}}
+
+   :release
+   {:closure-defines {goog.DEBUG false
+                      app.config/compiled-version-tag #shadow/env ["VERSION_TAG" :default "develop"]}
+    :compiler-options
+    {:fn-invoke-direct true
+     :optimizations :simple
+     :source-map true
+     :elide-asserts true
+     :anon-fn-naming-policy :off}}}
+
   :bench
   {:target :node-script
    :output-to "target/bench.js"

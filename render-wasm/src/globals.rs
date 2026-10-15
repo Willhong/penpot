@@ -221,16 +221,21 @@ pub extern "C" fn init(width: i32, height: i32) -> Result<()> {
     Ok(())
 }
 
-/// Boots the engine for headless export with no GPU/WebGL context: only
-/// `RenderResources` (GPU-free) + the design state. The export (raster/PDF)
-/// paths render onto their own surface; the interactive render loop is not
-/// available on an instance initialized this way. `width`/`height` are kept for
-/// API symmetry with `init` but unused — the export sizes from shape bounds.
+/// Boots the engine with no GPU/WebGL context: `RenderResources` (GPU-free),
+/// the design state and the GPU-free text editor and UI states. Used by the
+/// headless export and by the server-side MCP executor, which runs the
+/// workspace's editing code (and so its text editor queries) with no canvas.
+/// The export (raster/PDF) paths render onto their own surface; the
+/// interactive render loop is not available on an instance initialized this
+/// way. `width`/`height` are kept for API symmetry with `init` but unused —
+/// the export sizes from shape bounds.
 #[no_mangle]
 #[wasm_error]
 pub extern "C" fn init_headless(_width: i32, _height: i32) -> Result<()> {
     resources_init_headless();
+    text_editor_init();
     design_init();
+    ui_init();
     Ok(())
 }
 

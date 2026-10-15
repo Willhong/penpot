@@ -32,6 +32,11 @@
 (defonce gl-context nil)
 
 (defonce context-initialized? false)
+
+;; True when the module was booted with `_init_headless` to run the
+;; workspace's editing code with no render surface (server-side MCP
+;; executor). There is no frame to draw, so nothing waits for one.
+(defonce headless? false)
 (defonce context-lost? (atom false))
 
 ;; True while `reload-renderer!` is reconstructing the GL/WASM pipeline after a

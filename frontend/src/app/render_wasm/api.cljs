@@ -209,13 +209,16 @@
 
 (defn listen-tiles-render-complete-once!
   "Registers a one-shot listener for `penpot:wasm:tiles-complete`, dispatched from WASM
-  when a full tile pass finishes."
+  when a full tile pass finishes. A headless module has no tile pass to wait
+  for, so `f` runs on the next tick."
   [f]
-  (.addEventListener ^js ug/document
-                     "penpot:wasm:tiles-complete"
-                     (fn [_]
-                       (f))
-                     #js {:once true}))
+  (if ^boolean wasm/headless?
+    (timers/asap f)
+    (.addEventListener ^js ug/document
+                       "penpot:wasm:tiles-complete"
+                       (fn [_]
+                         (f))
+                       #js {:once true})))
 
 (defn text-editor-wasm?
   []

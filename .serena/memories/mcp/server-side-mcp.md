@@ -11,7 +11,13 @@ Fork-specific work (Plane PEN-23 → PEN-22). Goal: an MCP that edits and export
   - The exporter already runs render-wasm headless under Node (`exporter/src/app/wasm.cljs`).
   - Stale `revn` is accepted; a `revn` ahead of the server is a `revn-conflict`; there is no request dedup.
   - The WebSocket drops this connection's own `session-id`, so each server session needs its own UUID.
+- Executor (E4 proven 2026-10-15): the frontend's own store, workspace events and `app.plugins.api` run under plain Node with render-wasm booted by `_init_headless` (`frontend/src/app/executor/`, shadow build `:executor`). Results equal a wasm-mode browser exactly (`experiments/e4_headless_compute.py`). `app.common.render-wasm.wasm/headless?` marks this mode; render-wasm skips tile/render-state work when there is no render state.
+- The browser's default renderer is `:svg` (profile prop `:renderer`, `render-switch` flag), not wasm; compare against a profile switched to wasm.
+- MCP tokens (`iss urn:penpot:mcp-token`) are rejected by `app.http.access-token/decode-token` on purpose (test `mcp-tokens-cannot-be-used-as-access-tokens`).
 - Gotchas:
   - The exporter needs `PENPOT_INTERNAL_URI` when the public port differs from the container port.
   - The frontend and exporter watchers race on `rustup default` in a fresh container.
   - Transit fragments cannot be spliced because of key caching.
+  - The executor must set `:session-id` in state (the browser's `app.main/initialize` does) or `update-file` fails validation.
+  - `p/let` awaits promise bindings: subscribe-then-emit through a helper, not a binding.
+  - `$TMPDIR` differs inside and outside the agent sandbox; keep experiment output in `.mcp-verify/`.

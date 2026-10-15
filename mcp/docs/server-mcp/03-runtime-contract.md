@@ -4,7 +4,7 @@
 - `01-feature-contract.md`: 기능 범위, 사용자 정책
 - `02-browser-dependency-research.md`: 기술 조사, 실험
 
-상태: **기술 계약은 확정했다.** 단, 아래 'blocker'로 표시한 계산 경로는 실증 전이다. 그 경로를 쓰는 구현은 blocker 실험이 통과해야 완료할 수 있다. D10은 2026-10-15에 사용자가 선택지 1로 확정했다.
+상태: **기술 계약은 확정했다.** E4(레이아웃·텍스트·boolean)는 2026-10-15에 실증했다. 아래 'blocker'로 표시한 나머지 계산 경로는 실증 전이다. 그 경로를 쓰는 구현은 blocker 실험이 통과해야 완료할 수 있다. D10은 2026-10-15에 사용자가 선택지 1로 확정했다.
 
 ## 1. 구성 요소와 경계
 
@@ -83,9 +83,9 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 | 계산 | 엔진 | 입력 | 출력 | 실패 | 상태 |
 |---|---|---|---|---|---|
 | 도형 생성·속성·changes | cljc `setup-shape`, `changes-builder` | 작업본 objects, 속성 | 변경 목록 | 스키마 위반 → `validation` | 실증 E1 |
-| 변환·constraints·레이아웃 reflow | render-wasm `propagate_modifiers` | 직렬화된 도형 트리, modifiers | 도형별 transform → selrect/points 변경 | 엔진 오류 → `engine-error` | **blocker E4** |
-| 텍스트 크기·`position-data` | render-wasm `get_text_dimensions`, `calculate_position_data`, 필요 시 `update_shape_text_layout` | 텍스트 content, 폰트 바이트 | width/height, position-data | 폰트 없음 → 대체 폰트 + `font-fallback` 경고 | **blocker E4** |
-| boolean | render-wasm `calculate_bool` | 자식 path, bool type | path content | `engine-error` | **blocker E4** |
+| 변환·constraints·레이아웃 reflow | render-wasm `propagate_modifiers` | 직렬화된 도형 트리, modifiers | 도형별 transform → selrect/points 변경 | 엔진 오류 → `engine-error` | 실증 E4 |
+| 텍스트 크기·`position-data` | render-wasm `get_text_dimensions`, `calculate_position_data`, 필요 시 `update_shape_text_layout` | 텍스트 content, 폰트 바이트 | width/height, position-data | 폰트 없음 → 대체 폰트 + `font-fallback` 경고 | 실증 E4 |
+| boolean | render-wasm `calculate_bool` | 자식 path, bool type | path content | `engine-error` | 실증 E4 |
 | 컴포넌트 동기화 | cljc `app.common.logic.libraries` + 위 계산 | 라이브러리·파일 | 변경 목록 | `validation` | 읽기로 확인 |
 | 토큰 해석 | npm `style-dictionary` + `sd-transforms` (frontend와 같은 버전) | token set/theme | resolvedValue | 해석 불가 → 토큰별 오류 목록 | **blocker E5** |
 | SVG 가져오기 | `tubax` + `app.common.svg` (+ svgo) | SVG 문자열, 이미지 | shape 트리 변경 | 파싱 실패 → `svg-parser` | **blocker E6** |

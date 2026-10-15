@@ -11,7 +11,7 @@
    - exporter는 render-wasm을 Node worker에서 GPU 없이 띄우는 headless 경로(`is-wasm`)를 갖고 있다. 같은 도형을 Chromium export와 픽셀 차이 0으로 출력했고, 52배 빨랐다(E3).
    - render-wasm crate는 Linux native로도 컴파일되며, 단위 테스트 315개가 통과했다(E2).
    - 공용 직렬화 계층 `common/src/app/common/render_wasm/`은 DOM 없이 Node에서 돌도록 규칙이 정해져 있다.
-5. **제안 경로**: Node 실행기 + headless render-wasm(경로 A). 브라우저와 같은 계산 엔진을 쓰므로 동등성을 맞추기 쉽다. JVM만 쓰는 경로(B)는 텍스트 측정을 새로 만들어야 한다. 서버 headless Chromium(C)은 '브라우저 없이'의 정의에 걸린다. A의 핵심인 계산 API(`propagate_modifiers`, `get_text_dimensions`, `calculate_position_data`, `calculate_bool`)를 Node에서 부르는 것은 **아직 실증하지 않았다**(E4, PEN-22 첫 작업).
+5. **제안 경로**: Node 실행기 + headless render-wasm(경로 A). 브라우저와 같은 계산 엔진을 쓰므로 동등성을 맞추기 쉽다. JVM만 쓰는 경로(B)는 텍스트 측정을 새로 만들어야 한다. 서버 headless Chromium(C)은 '브라우저 없이'의 정의에 걸린다. A의 핵심인 계산을 Node에서 브라우저와 같은 값으로 얻는 것은 **E4에서 실증했다**(2026-10-15). frontend 편집 계층을 그대로 Node에서 돌리고 render-wasm만 headless로 띄운 실행기가 브라우저(wasm 모드)와 같은 값을 저장했다.
 
 ## 1. 현재 편집 경로
 
@@ -131,11 +131,39 @@ python3 -I mcp/docs/server-mcp/experiments/e3_headless_export.py --file scratch 
 
 exporter 로그에서 `hint="render", backend="wasm"`을 확인했다. 브라우저 없이 Node worker에서 렌더했다는 뜻이다.
 
+### E4 headless 계산과 브라우저(wasm 모드) 계산 — `experiments/e4_headless_compute.py`
+
+```sh
+# 컨테이너 안에서 실행기 빌드: cd frontend && clojure -M:dev:shadow-cljs compile executor
+python3 -I mcp/docs/server-mcp/experiments/e4_headless_compute.py --space <ego-browser task space>
+```
+
+방법 (2026-10-15):
+- 실행기는 frontend의 편집 계층(store, workspace 이벤트, `app.plugins.api`)을 그대로 Node에서 돌린다. render-wasm만 `_init_headless`로 띄운다. 빌드는 frontend `shadow-cljs.edn`의 `:executor`, 코드는 `frontend/src/app/executor/`.
+- 같은 Plugin API 코드(`e4_scenario.js`)를 새 파일 두 개에 각각 실행한다. 하나는 editor 브라우저 탭(renderer wasm), 하나는 headless 실행기다. 두 파일을 backend에서 다시 읽어 도형 이름으로 맞춰 비교한다(`e4_compare.py`, 기준은 `03` §6).
+- `e4b_scenario.js`는 저장된 도형을 다시 연 파일에서 고친다. 엔진이 backend에서 읽은 도형으로 계산하는 경로를 시험한다.
+
+| 라운드 | 내용 | 결과 |
+|---|---|---|
+| 1 | wrap Flex(고정·fill·텍스트 자식) + 컨테이너 축소, auto-width 한글 혼합 텍스트, auto-height 문단, Boolean 4종 | 22개 도형 모두 같음. geometry·position-data·bool path 최대 차이 0.0 |
+| 2 (다시 열기) | Flex 방향·간격·크기 변경, 텍스트 내용·크기 변경, Boolean 피연산자 이동 | 22개 도형 모두 같음. 최대 차이 0.0 |
+
+- 실행 시간: 브라우저 8.2초 / 실행기 6.7초(1라운드), 3.1초 / 1.6초(2라운드). 둘 다 대기 5초와 저장 대기를 포함한다.
+- 텍스트 줄바꿈 조각도 같다. 예: `The quick brown ` / `fox jumps over the ` / `lazy dog again and ` / `again`.
+
+headless로 돌리려고 고친 곳:
+- render-wasm: `init_headless`가 텍스트 편집·UI 상태도 만든다(GPU 불필요). 렌더 상태가 없을 때 `clean_modifiers`, `set_modifiers`, `set_modifiers_start/end`, `get_shape_extrect`, 타일 재구성이 타일 캐시 작업을 건너뛴다. 브라우저는 항상 렌더 상태가 있으므로 동작이 같다.
+- common/frontend: `app.common.render-wasm.wasm/headless?`. 켜져 있으면 "타일 렌더 완료"를 기다리는 콜백을 바로 실행한다.
+
+함께 발견한 사실:
+- **[사실]** 브라우저의 기본 renderer는 wasm이 아니다. `render-switch` flag가 켜져 있으면 프로필 설정 `:renderer`를 따르고 기본값은 `:svg`(DOM 측정)다(`frontend/src/app/main/features.cljs:35`). 시험 계정 owner·editor는 설정에서 wasm으로 바꿨다. 운영에서 사용자 대부분이 어느 renderer를 쓰는지는 E9에서 확인한다.
+- **[사실]** wasm 모드에서 auto-height 텍스트의 크기를 바꾸면(`resize`) `:text-bridge` 대기 표시가 풀리지 않아 `waitForLayoutUpdate`가 시간 초과된다. 브라우저도 같다(내부 작업 번호까지 같음). 이때 높이도 다시 계산되지 않는다: 4줄인데 20px로 남는다. 서버 계약(§3 '실행이 끝날 때는 파생 값 계산을 끝낸다')을 지키려면 PEN-12에서 고쳐야 한다.
+
 ## 5. 미확인 항목과 다음 실험
 
 | ID | 질문 | 왜 중요한가 | 방법 | 담당 |
 |---|---|---|---|---|
-| E4 | Node headless render-wasm에서 `_propagate_modifiers`·`_get_text_dimensions`·`_calculate_position_data`·`_calculate_bool`을 불러 브라우저(wasm 모드)와 같은 값을 얻는가 | 경로 A의 핵심. 레이아웃·텍스트·boolean의 성패 | exporter의 `app.wasm`(`init!`, `provision-fonts!`, `update-text-layout!`)에 계산 호출을 붙인 Node 하네스를 만든다. 같은 파일에서 브라우저 `execute_code` 결과와 비교한다 | PEN-22 첫 작업, PEN-12/13 blocker |
+| E4 | Node headless render-wasm으로 브라우저(wasm 모드)와 같은 계산 값을 얻는가 | 경로 A의 핵심 | §4 E4 | **완료 2026-10-15: 같음** |
 | E5 | `style-dictionary` 토큰 해석이 frontend 밖 Node에서 같은 값을 내는가 | 토큰 적용 값 | `resolve-tokens`를 Node 빌드에서 실행해 브라우저 resolvedValue와 비교 | PEN-15 |
 | E6 | SVG 가져오기(`tubax`, svgo)가 Node에서 같은 shape 트리를 만드는가 | SVG import | 같은 SVG를 두 경로로 가져와 비교 | PEN-16 |
 | E7 | 코드 생성 컴포넌트를 DOM 없이 렌더할 수 있는가 | generateMarkup/Style | `code_gen` 의존 네임스페이스를 Node 빌드에 넣어 본다 | PEN-19 |

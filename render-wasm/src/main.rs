@@ -352,6 +352,9 @@ pub extern "C" fn set_view_end() -> Result<()> {
 #[no_mangle]
 #[wasm_error]
 pub extern "C" fn set_modifiers_start() -> Result<()> {
+    if !has_render_state() {
+        return Ok(());
+    }
     performance::begin_measure!("set_modifiers_start");
     let render_state = get_render_state();
     render_state.moving_extrects.clear();
@@ -368,6 +371,9 @@ pub extern "C" fn set_modifiers_start() -> Result<()> {
 #[no_mangle]
 #[wasm_error]
 pub extern "C" fn set_modifiers_end() -> Result<()> {
+    if !has_render_state() {
+        return Ok(());
+    }
     performance::begin_measure!("set_modifiers_end");
     let render_state = get_render_state();
     render_state.moving_extrects.clear();
@@ -701,8 +707,13 @@ pub extern "C" fn set_structure_modifiers() -> Result<()> {
 #[wasm_error]
 pub extern "C" fn clean_modifiers() -> Result<()> {
     with_state!(state, {
-        let render_state = get_render_state();
         let prev_modifier_ids = state.shapes.clean_all();
+        // The headless engine (server-side MCP executor) has no render state,
+        // hence no tile cache to clean.
+        if !has_render_state() {
+            return Ok(());
+        }
+        let render_state = get_render_state();
         // Skip the tile-cache cleanup during interactive transform: the
         // per-rAF `rebuild_modifier_tiles` in `render()` already evicts
         // the same tiles for the active modifier set, so the eviction
@@ -733,7 +744,7 @@ pub extern "C" fn set_modifiers() -> Result<()> {
 
     with_state!(state, {
         state.set_modifiers(modifiers);
-        if !get_render_state().options.is_interactive_transform() {
+        if has_render_state() && !get_render_state().options.is_interactive_transform() {
             state.rebuild_modifier_tiles(&ids)?;
         }
     });
@@ -763,7 +774,11 @@ pub extern "C" fn get_shape_extrect(a: u32, b: u32, c: u32, d: u32) -> Result<*m
         let Some(shape) = state.shapes.get(&id) else {
             return Err(Error::CriticalError("Shape not found".to_string()));
         };
-        let extrect = get_render_state().get_cached_extrect(shape, &state.shapes, 1.0);
+        let extrect = if has_render_state() {
+            get_render_state().get_cached_extrect(shape, &state.shapes, 1.0)
+        } else {
+            shape.extrect(&state.shapes, 1.0)
+        };
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&extrect.x().to_le_bytes());
         buf.extend_from_slice(&extrect.y().to_le_bytes());
