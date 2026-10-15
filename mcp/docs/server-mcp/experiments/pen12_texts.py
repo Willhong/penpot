@@ -75,6 +75,9 @@ def no_browser(space, session):
     revn_after, saved_after = text_shapes(file_id)
     unchanged = all(saved[name]["selrect"] == saved_after[name]["selrect"]
                     and saved[name].get("positionData") == saved_after[name].get("positionData") for name in saved)
+    changes = {name: dual_run.diff(dual_run.normalize(saved[name], {}), dual_run.normalize(saved_after[name], {}))
+               for name in saved}
+    changes = {name: change for name, change in changes.items() if change}
     browser_same = all(abs(browser[name]["width"] - sizes[name]["width"]) < 0.01
                        and abs(browser[name]["height"] - sizes[name]["height"]) < 0.01 for name in sizes)
     return {
@@ -85,6 +88,8 @@ def no_browser(space, session):
         "revnBeforeBrowser": revn,
         "revnAfterBrowser": revn_after,
         "savedUnchangedAfterBrowser": unchanged,
+        "changedByBrowser": changes,
+        "fileId": file_id,
         "browserSeesSameSizes": browser_same,
     }
 

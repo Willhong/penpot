@@ -131,6 +131,7 @@ MCP server가 멈출 때(`SIGINT`/`SIGTERM`)는 연결을 닫기 전에 실행�
 | 프로세스 RSS | 약 0.5–0.7 GB | 측정 |
 | 동시 실행 | 사용자당 2, 전체 CPU 수 | D9. 넘으면 `resource-limit` |
 | 유휴 세션 | 15분 뒤 종료 | `PENPOT_MCP_EXECUTOR_IDLE_S` |
+| 살아 있는 세션(프로세스) 수 | 사용자당 4, 전체는 메모리 1GB당 1 | `PENPOT_MCP_EXECUTOR_SESSIONS_PER_USER`, `PENPOT_MCP_EXECUTOR_SESSIONS_MAX`. 넘으면 가장 오래 쉰 유휴 세션을 닫는다(그 세션의 `storage`와 열린 파일은 사라진다). 모두 실행 중이면 `resource-limit`. PEN-13 시험 중 세션 16개(약 13GB)가 쌓여 backend가 메모리 부족으로 죽은 뒤 넣었다 |
 | 첫 호출(프로세스 시작) | 약 4–5초 | PEN-3 측정 |
 | 이어지는 호출 | 0.04–0.1초 (사각형 1개) | PEN-3 측정 |
 

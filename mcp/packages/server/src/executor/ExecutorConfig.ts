@@ -1,7 +1,7 @@
 import { createHash, hkdfSync } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
-import { cpus } from "node:os";
+import { cpus, totalmem } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -19,6 +19,9 @@ import { dirname, resolve } from "node:path";
  * - limits (D9): `PENPOT_MCP_EXECUTOR_TIMEOUT_S` (120), `PENPOT_MCP_EXECUTOR_HEAP_MB` (512, see below),
  *   `PENPOT_MCP_EXECUTOR_PER_USER` (2), `PENPOT_MCP_EXECUTOR_MAX` (CPU count),
  *   `PENPOT_MCP_EXECUTOR_IDLE_S` (900, idle sessions are closed)
+ * - live sessions, one process each (about 0.5–0.7 GB): `PENPOT_MCP_EXECUTOR_SESSIONS_PER_USER` (4),
+ *   `PENPOT_MCP_EXECUTOR_SESSIONS_MAX` (one per GB of memory); past them the least recently used idle
+ *   session is closed
  */
 export class ExecutorConfig {
     /** entry point of the executor process (`dist/executor-child.js`, next to the server bundle) */
@@ -35,6 +38,8 @@ export class ExecutorConfig {
     readonly perUser: number;
     readonly maxExecutions: number;
     readonly idleMs: number;
+    readonly sessionsPerUser: number;
+    readonly maxSessions: number;
     readonly settleTimeoutMs: number;
     /** Redis for the request ledger (D5), shared by MCP server instances; in memory without it */
     readonly redisUri: string | null;
@@ -67,6 +72,12 @@ export class ExecutorConfig {
         this.perUser = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_PER_USER, 2);
         this.maxExecutions = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_MAX, cpus().length);
         this.idleMs = 1000 * ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_IDLE_S, 900);
+        this.sessionsPerUser = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_SESSIONS_PER_USER, 4);
+        // an executor process takes about 0.5-0.7 GB (03-runtime-contract §2, PEN-3 measurements)
+        this.maxSessions = ExecutorConfig.int(
+            env.PENPOT_MCP_EXECUTOR_SESSIONS_MAX,
+            Math.max(2, Math.floor(totalmem() / 1024 ** 3))
+        );
         this.settleTimeoutMs = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_SETTLE_TIMEOUT_MS, 10000);
         this.redisUri = env.PENPOT_MCP_REDIS_URI ?? null;
         this.tenant = env.PENPOT_TENANT ?? "default";

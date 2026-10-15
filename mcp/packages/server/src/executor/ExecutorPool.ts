@@ -12,6 +12,10 @@ class ExecutorSession {
     /** tail of the execution queue */
     private tail: Promise<unknown> = Promise.resolve();
     private process: Promise<ExecutorProcess> | null = null;
+    /** executions queued or running */
+    public active = 0;
+    /** when an execution last started or ended */
+    public lastUsed = Date.now();
 
     constructor(
         public readonly key: string,
@@ -35,9 +39,23 @@ class ExecutorSession {
      * Runs `task` after the executions queued before it.
      */
     enqueue<T>(task: () => Promise<T>): Promise<T> {
+        this.active++;
+        this.lastUsed = Date.now();
         const result = this.tail.then(task, task);
         this.tail = result.catch(() => undefined);
+        const done = () => {
+            this.active--;
+            this.lastUsed = Date.now();
+        };
+        result.then(done, done);
         return result;
+    }
+
+    /**
+     * Ends the session's process, if it has one.
+     */
+    close(): void {
+        this.process?.then((process) => process.kill(null)).catch(() => undefined);
     }
 
     get started(): Promise<ExecutorProcess> | null {
@@ -114,6 +132,11 @@ export class ExecutorPool {
         const key = `${userKey}:${sessionName}`;
         let session = this.sessions.get(key);
         if (!session) {
+            try {
+                this.admit(userKey);
+            } catch (error) {
+                return Promise.reject(error);
+            }
             session = new ExecutorSession(key, userKey, sessionName);
             this.sessions.set(key, session);
         }
@@ -154,6 +177,33 @@ export class ExecutorPool {
                 outcome
             );
         }
+    }
+
+    /**
+     * Makes room for a new session of `userKey` within the session limits, closing the least recently used
+     * idle session (of that user, or of anyone for the global limit). Each session holds a process of about
+     * 0.5-0.7 GB, so sessions a client opens and forgets must not pile up until the idle timeout.
+     */
+    private admit(userKey: string): void {
+        const all = [...this.sessions.values()];
+        const own = all.filter((session) => session.userKey === userKey);
+        if (own.length >= this.config.sessionsPerUser) {
+            this.evictIdle(own, `at most ${this.config.sessionsPerUser} executor sessions per user`);
+        }
+        if (this.sessions.size >= this.config.maxSessions) {
+            this.evictIdle([...this.sessions.values()], "the server runs its maximum number of executor sessions");
+        }
+    }
+
+    private evictIdle(candidates: ExecutorSession[], limit: string): void {
+        const idle = candidates.filter((session) => session.active === 0).sort((a, b) => a.lastUsed - b.lastUsed);
+        if (idle.length === 0) {
+            throw new ExecutorError("resource-limit", `${limit}, and all of them are running`);
+        }
+        const oldest = idle[0];
+        this.logger.info("closing executor session %s to make room (%s)", oldest.key, limit);
+        oldest.close();
+        this.sessions.delete(oldest.key);
     }
 
     private acquire(userKey: string): void {
