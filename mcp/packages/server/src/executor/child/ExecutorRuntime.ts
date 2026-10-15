@@ -3,6 +3,7 @@ import { ExecuteCodeTaskConsole } from "@penpot/mcp-plugin/console";
 import { PenpotUtils } from "@penpot/mcp-plugin/utils";
 import { ExecutorError } from "../ExecutorError";
 import type { ExecuteParams, ExecutionResult, ExecutorStatus, SaveInfo } from "../ExecutorProtocol";
+import { ApiTrace } from "./ApiTrace";
 import { HeadlessEngine } from "./HeadlessEngine";
 import { Sandbox, hardenProcessIntrinsics } from "./Sandbox";
 import { createServerContext } from "./ServerContext";
@@ -46,7 +47,7 @@ export class ExecutorRuntime {
 
     private engine!: HeadlessEngine;
     private api!: ServerPluginApi;
-    private readonly sandbox = new Sandbox();
+    private readonly sandbox = new Sandbox(process.env.PENPOT_EXECUTOR_TRACE_API === "1" ? new ApiTrace() : null);
     private readonly storage: Record<string, unknown> = {};
     /** phase of the execution in progress, for cancellation (D6) */
     private phase: "idle" | "running" | "saving" = "idle";

@@ -1,4 +1,5 @@
 import "ses";
+import { ApiTrace } from "./ApiTrace";
 
 declare const Compartment: any;
 declare const harden: <T>(value: T) => T;
@@ -90,12 +91,18 @@ export interface SandboxGlobals {
  */
 export class Sandbox {
     /**
+     * @param trace record of the API members user code touches (PEN-9 coverage run); null in normal use
+     */
+    constructor(private readonly trace: ApiTrace | null = null) {}
+
+    /**
      * Runs `code` as the body of an async function in a new compartment and resolves to its return value.
      */
     run(code: string, globals: SandboxGlobals): Promise<unknown> {
+        const trace = this.trace;
         const compartment = new Compartment({
-            penpot: safeProxy(globals.penpot),
-            penpotMgmt: safeProxy(globals.penpotMgmt),
+            penpot: trace ? trace.wrap(safeProxy(globals.penpot), "penpot") : safeProxy(globals.penpot),
+            penpotMgmt: trace ? trace.wrap(safeProxy(globals.penpotMgmt), "penpotMgmt") : safeProxy(globals.penpotMgmt),
             penpotUtils: harden(globals.penpotUtils),
             storage: globals.storage,
             console: harden(globals.console),
@@ -148,6 +155,6 @@ export class Sandbox {
             structuredClone: harden(structuredClone),
         });
         const fn = compartment.evaluate(`(async () => { ${code}\n})`);
-        return fn();
+        return trace ? fn().finally(() => trace.flush()) : fn();
     }
 }

@@ -60,6 +60,8 @@ export class ExecutorProcess {
                 PENPOT_EXECUTOR_BACKEND_URI: config.publicUri,
                 PENPOT_FLAGS: config.flags,
                 PENPOT_VERSION: config.version,
+                // PEN-9 coverage run only (`child/ApiTrace.ts`)
+                PENPOT_EXECUTOR_TRACE_API: process.env.PENPOT_EXECUTOR_TRACE_API ?? "",
             },
             // The process boundary is the security boundary (D12), not the SES compartment alone: the
             // Node permission model limits it to reading the code it runs, with no file writes, no child
