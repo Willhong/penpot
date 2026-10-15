@@ -104,6 +104,10 @@ export function createServerPluginApi(context: any, centerShapes: (shapes: unkno
         get size() {
             return uiOnly("ui.size", "there is no plugin window");
         },
+        // D8 (c) for writes too, not a TypeError about a missing setter
+        set size(_value: unknown) {
+            uiOnly("ui.size", "there is no plugin window");
+        },
         resize: () => uiOnly("ui.resize()", "there is no plugin window"),
         sendMessage: () => uiOnly("ui.sendMessage()", "there is no plugin window"),
         onMessage: () => uiOnly("ui.onMessage()", "there is no plugin window"),

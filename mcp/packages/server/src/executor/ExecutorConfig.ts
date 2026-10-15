@@ -1,5 +1,5 @@
 import { createHash, hkdfSync } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { cpus, totalmem } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,8 @@ import { dirname, resolve } from "node:path";
  * - `PENPOT_MCP_EXECUTOR_UI_URI`: URI users open Penpot at, for the links the executor gives them (the viewer
  *   of `openViewer()`); `PENPOT_PUBLIC_URI` by default, else the executor's backend URI
  * - `PENPOT_MCP_SHARED_KEY`: the backend's `mcp` shared key (D11); derived from `PENPOT_SECRET_KEY` otherwise
+ * - `PENPOT_VERSION`: the frontend version the executor reports (`penpot.version`, `engine.frontendVersion`);
+ *   by default the one the frontend build next to the wasm directory declares in its `index.html`
  * - `PENPOT_MCP_EXECUTOR_FS_READ`: comma-separated directories the executor process may read (Node permission
  *   model); default: the frontend checkout holding the bundle, the wasm directory and this package
  * - limits (D9): `PENPOT_MCP_EXECUTOR_TIMEOUT_S` (120), `PENPOT_MCP_EXECUTOR_HEAP_MB` (512, see below),
@@ -58,7 +60,7 @@ export class ExecutorConfig {
         this.publicUri = ExecutorConfig.require(env, "PENPOT_MCP_EXECUTOR_PUBLIC_URI");
         this.uiUri = env.PENPOT_MCP_EXECUTOR_UI_URI ?? env.PENPOT_PUBLIC_URI ?? this.publicUri;
         this.flags = env.PENPOT_FLAGS ?? "";
-        this.version = env.PENPOT_VERSION ?? "";
+        this.version = env.PENPOT_VERSION ?? ExecutorConfig.buildVersion(this.wasmDir) ?? "";
         this.sharedKey = env.PENPOT_MCP_SHARED_KEY ?? ExecutorConfig.deriveSharedKey(env.PENPOT_SECRET_KEY);
         this.fsRead = env.PENPOT_MCP_EXECUTOR_FS_READ
             ? env.PENPOT_MCP_EXECUTOR_FS_READ.split(",").map((path) => resolve(path.trim()))
@@ -113,6 +115,19 @@ export class ExecutorConfig {
             return null;
         }
         return Buffer.from(hkdfSync("blake2b512", secretKey, "mcp", "", 32)).toString("base64url");
+    }
+
+    /**
+     * The version a frontend build declares (`penpotVersion = "…"` in its `index.html`, one directory above
+     * its `js` directory), as the browser reads it; null when there is no such file.
+     */
+    static buildVersion(wasmDir: string): string | null {
+        try {
+            const html = readFileSync(resolve(wasmDir, "..", "index.html"), "utf-8");
+            return /penpotVersion\s*=\s*"([^"]*)"/.exec(html)?.[1] ?? null;
+        } catch {
+            return null;
+        }
     }
 
     /**
