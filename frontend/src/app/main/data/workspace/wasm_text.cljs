@@ -14,6 +14,7 @@
    [app.common.files.helpers :as cfh]
    [app.common.geom.matrix :as gmt]
    [app.common.geom.point :as gpt]
+   [app.common.math :as mth]
    [app.common.render-wasm.api.select :as wselect]
    [app.common.types.modifiers :as ctm]
    [app.main.data.helpers :as dsh]
@@ -70,11 +71,17 @@
                     (:height dimension))})))))
 
 (defn resize-wasm-text-modifiers
+  "Modifiers that give a text the size WASM measures for it, or nil when it
+  has that size already. Float noise between two measures of the same layout
+  is no resize: it would only save geometry nobody changed."
   ([shape]
    (resize-wasm-text-modifiers shape (:content shape)))
 
   ([{:keys [id points selrect] :as shape} content]
-   (when-let [new-size (get-wasm-text-new-size shape content)]
+   (when-let [new-size (when-let [size (get-wasm-text-new-size shape content)]
+                         (when-not (and (mth/close? (:width size) (:width selrect))
+                                        (mth/close? (:height size) (:height selrect)))
+                           size))]
      (let [width-scale  (/ (:width new-size) (:width selrect))
            height-scale (/ (:height new-size) (:height selrect))
            resize-v     (gpt/point width-scale height-scale)
@@ -102,11 +109,13 @@
        (let [objects (dsh/lookup-page-objects state)
              shape   (get objects id)
              apply-opts (or opts {})
+             modifiers (when (and (some? shape)
+                                  (cfh/text-shape? shape)
+                                  (not= :fixed (:grow-type shape)))
+                         (resize-wasm-text-modifiers shape))
              resize-stream
-             (if (and (some? shape)
-                      (cfh/text-shape? shape)
-                      (not= :fixed (:grow-type shape)))
-               (rx/of (dwm/apply-wasm-modifiers (resize-wasm-text-modifiers shape) apply-opts))
+             (if (some? modifiers)
+               (rx/of (dwm/apply-wasm-modifiers modifiers apply-opts))
                (rx/empty))]
          (wrf/with-pending :text-resize [id] resize-stream))))))
 

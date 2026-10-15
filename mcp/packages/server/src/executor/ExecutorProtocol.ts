@@ -54,7 +54,7 @@ export interface CommitReport {
     computed: { layout: boolean; text: boolean; bool: boolean; componentSync: boolean };
     /** always null, see `computed` */
     pending?: Record<string, string[]> | null;
-    warnings?: { code: string; shapeId?: string; message?: string }[];
+    warnings?: { code: string; shapeId?: string; fontId?: string; message?: string }[];
 }
 
 /**

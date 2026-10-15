@@ -25,12 +25,14 @@
    [app.main.data.helpers :as dsh]
    [app.main.data.persistence :as dps]
    [app.main.data.workspace.pages :as dwpg]
+   [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.store :as st]
    [app.plugins.api :as plugins.api]
    [app.plugins.public-utils :as public-utils]
    [app.plugins.register :as preg]
    ;; as `app.plugins` does in the browser
    [app.plugins.wiring]
+   [app.render-wasm.api.fonts :as wasm.fonts]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [potok.v2.core :as ptk]
@@ -207,6 +209,27 @@
     (reset! dps/autosave-held? false)
     state))
 
+(defn- font-fallback-warnings
+  "`font-fallback` warnings (03-runtime-contract §3) for the texts among
+  `ids` laid out without one of their fonts: its file could not be had (a
+  deleted custom font, a failed download), so another font stands in."
+  [ids]
+  (let [objects (dsh/lookup-page-objects @st/state)]
+    (into []
+          (comp
+           (map #(get objects %))
+           (filter #(= :text (:type %)))
+           (mapcat (fn [{:keys [id content]}]
+                     (->> (dwwt/text-fonts content)
+                          (map wasm.fonts/make-font-data)
+                          (filter #(and (wasm.fonts/font-ready? %)
+                                        (not (wasm.fonts/font-stored? % (:emoji? %)))))
+                          (map (fn [font] {:code "font-fallback"
+                                           :shapeId (str id)
+                                           :fontId (:font-id font)}))
+                          (distinct)))))
+          ids)))
+
 (defn ^:export finishExecution
   "Completes the derived values of the execution (layout, text size and
   position data, booleans, component sync) and saves them with its edits.
@@ -241,6 +264,7 @@
                                                    " (now " revn "); nothing was saved")
                                               {:type :validation :code :precondition-failed}))))
                 _         (session/flush!)
+                warnings  (font-fallback-warnings (:changed @execution))
                 state     (end-execution!)
                 file-id   (or (current-file-id) (:file-id state))
                 ;; the revn the last `update-file` answered: the file's revn
@@ -263,7 +287,8 @@
                          0)
                ;; derived values always complete before a save (see above)
                :computed #js {:layout true :text true :bool true :componentSync true}
-               :pending nil})
+               :pending nil
+               :warnings (clj->js warnings)})
         (p/catch (fn [cause]
                    (end-execution!)
                    (p/rejected (contract-error cause)))))))

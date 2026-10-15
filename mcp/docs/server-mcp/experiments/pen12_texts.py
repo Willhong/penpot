@@ -14,6 +14,8 @@
 # - noBrowser (server only): the scenario runs while no browser has the file
 #   open; the saved texts already have their final size and position data,
 #   and a browser opened afterwards neither changes nor saves them again.
+# - fontFallback (server only): a text whose font file cannot be had is
+#   edited; the commit warns `font-fallback` for it (03-runtime-contract §3).
 #
 # Prints a JSON report; exit status 1 when a check fails.
 
@@ -94,6 +96,52 @@ def no_browser(space, session):
     }
 
 
+def font_fallback(session):
+    """A text whose font file cannot be had (here a custom font that does not exist, set through the
+    backend) is edited on the server: the commit carries a `font-fallback` warning for it."""
+    import uuid as uuidlib
+    file_id, _ = mcpv.create_file("pen12-font-fallback")
+    client = mcp_client.Client(mcpv.token("editor", "mcp"), executor="server")
+    created = client.execute_code("""
+const t = penpot.createText("Missing font text"); t.name = 'missing';
+await penpot.waitForLayoutUpdate(5000);
+return { id: t.id, page: penpot.currentPage.id };""", fileId=file_id, sessionId=session)[0]["result"]
+    data = mcpv.rpc_ok("get-file", {"id": file_id}, mcpv.token("editor"))
+    shape = data["data"]["pagesIndex"][created["page"]]["objects"][created["id"]]
+    missing_font = f"custom-{uuidlib.uuid4()}"
+
+    def retarget(node):
+        if isinstance(node, dict):
+            if "fontId" in node:
+                node["fontId"] = missing_font
+            for value in node.values():
+                retarget(value)
+        elif isinstance(node, list):
+            for value in node:
+                retarget(value)
+
+    content = shape["content"]
+    retarget(content)
+    mcpv.rpc_ok("update-file", {
+        "id": file_id, "sessionId": str(uuidlib.uuid4()), "revn": data["revn"], "vern": data["vern"],
+        "changes": [{"type": "mod-obj", "id": created["id"], "pageId": created["page"],
+                     "operations": [{"type": "set", "attr": "content", "val": content}]}],
+    }, mcpv.token("editor"))
+    time.sleep(1)
+    edited = client.execute_code("""
+const t = penpot.currentPage.findShapes({ name: 'missing' })[0];
+t.characters = "Missing font text, edited";
+await penpot.waitForLayoutUpdate(10000);
+return { fontId: t.fontId, width: t.width };""", sessionId=session)[0]
+    warnings = edited["commit"].get("warnings") or []
+    return {
+        "ok": any(w.get("code") == "font-fallback" and w.get("shapeId") == created["id"]
+                  and w.get("fontId") == missing_font for w in warnings) and edited["result"]["width"] > 1,
+        "result": edited["result"],
+        "warnings": warnings,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--space", type=int, required=True)
@@ -108,6 +156,10 @@ def main():
         report["noBrowser"] = no_browser(args.space, f"{run.session}-alone")
     except Exception as error:  # noqa: BLE001
         report["noBrowser"] = {"ok": False, "crashed": repr(error)[:600]}
+    try:
+        report["fontFallback"] = font_fallback(f"{run.session}-fallback")
+    except Exception as error:  # noqa: BLE001
+        report["fontFallback"] = {"ok": False, "crashed": repr(error)[:600]}
 
     failed = [name for name, check in report.items() if not check.get("ok")]
     print(json.dumps({"failed": failed, "report": report}, indent=2, ensure_ascii=False))
