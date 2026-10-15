@@ -51,6 +51,7 @@ export class ExecutorProcess {
                 PENPOT_EXECUTOR_WASM_DIR: config.wasmDir,
                 PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS: String(config.settleTimeoutMs),
                 PENPOT_PUBLIC_URI: config.publicUri,
+                PENPOT_EXECUTOR_UI_URI: config.uiUri,
                 PENPOT_FLAGS: config.flags,
                 PENPOT_VERSION: config.version,
             },

@@ -80,7 +80,8 @@ def shape_keys(objects):
 
 
 def saved_shapes(file_id):
-    """{page/key: normalized shape} of every page of a file, as the backend has it (see `shape_keys`)."""
+    """{page/key: normalized shape} of every page of a file, as the backend has it (see `shape_keys`), plus
+    `page/(page)` for the page's own data (flows, ruler guides)."""
     data = mcpv.rpc_ok("get-file", {"id": file_id}, mcpv.token("editor"))["data"]
     shapes, names = {}, {}
     for page_id in data["pages"]:
@@ -88,8 +89,11 @@ def saved_shapes(file_id):
         names[page_id] = "page:" + page["name"]
         names.update(shape_keys(page["objects"]))
     for page_id in data["pages"]:
-        for shape_id, shape in data["pagesIndex"][page_id]["objects"].items():
+        page = data["pagesIndex"][page_id]
+        for shape_id, shape in page["objects"].items():
             shapes[f'{names[page_id]}/{names[shape_id]}'] = normalize(shape, names)
+        # page-level data: flows, ruler guides
+        shapes[f'{names[page_id]}/(page)'] = normalize({k: v for k, v in page.items() if k != "objects"}, names)
     return shapes
 
 

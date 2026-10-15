@@ -191,6 +191,9 @@
              (nil? index)
              (u/not-valid plugin-id :action "The interaction is not part of the shape anymore")
 
+             (nil? params)
+             (u/not-valid plugin-id :action (obj/get value "type"))
+
              (not (valid-interaction-action? file-id page-id shape value interaction))
              (u/not-valid plugin-id :action interaction)
 
@@ -1694,6 +1697,11 @@
                                      (d/patch-object (parser/parse-action action))
                                      (cond-> (some? delay) (assoc :delay delay))))]
                (cond
+                 ;; an unknown action type parses to nothing, which the default
+                 ;; interaction would silently turn into a navigation
+                 (nil? (parser/parse-action action))
+                 (u/not-valid plugin-id :addInteraction-action (obj/get action "type"))
+
                  (not (valid-interaction-action? file-id page-id shape action interaction))
                  (u/not-valid plugin-id :addInteraction interaction)
 

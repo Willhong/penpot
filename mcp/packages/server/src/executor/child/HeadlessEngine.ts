@@ -34,6 +34,7 @@ interface ExecutorBundle {
     openFile(fileId: string, pageId: string | null): Promise<unknown>;
     observedScreen(): ObservedScreen | null;
     centerShapes(shapes: unknown[]): { x: number; y: number } | null;
+    viewerQuery(): string | null;
     beginExecution(options: { ifUnchangedSinceRevn?: number }): void;
     finishExecution(options: { settleTimeout: number }): Promise<CommitReport>;
     abortExecution(): Promise<void>;
@@ -80,6 +81,13 @@ export class HeadlessEngine {
 
     status(): ReturnType<ExecutorBundle["status"]> {
         return this.bundle.status();
+    }
+
+    /**
+     * Query of the viewer URL of the current page (`?screen=viewer&...`), or null with no file open.
+     */
+    viewerQuery(): string | null {
+        return this.bundle.viewerQuery() ?? null;
     }
 
     /**

@@ -18,6 +18,8 @@ export interface ExecutorRuntimeConfig {
     wasmDir: string;
     /** default bound for waiting on derived values after the code, in ms */
     settleTimeoutMs: number;
+    /** URI users open Penpot at, for the links given to them */
+    uiUri: string;
 }
 
 /**
@@ -63,7 +65,13 @@ export class ExecutorRuntime {
     async init(token: string, sharedKey: string | null): Promise<ExecutorStatus> {
         this.engine = await HeadlessEngine.boot(this.config.bundlePath, this.config.wasmDir, token, sharedKey);
         this.api = createServerPluginApi(
-            createServerContext(this.engine.context(), () => this.engine.observedScreen()),
+            createServerContext(this.engine.context(), {
+                observe: () => this.engine.observedScreen(),
+                viewerUrl: () => {
+                    const query = this.engine.viewerQuery();
+                    return query ? `${this.config.uiUri.replace(/\/+$/, "")}/${query}` : null;
+                },
+            }),
             (shapes) => this.engine.centerShapes(shapes)
         );
         // PenpotUtils refers to the `penpot` global of its own realm

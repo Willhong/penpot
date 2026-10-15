@@ -179,6 +179,7 @@
                          openFile         app.executor.api/openFile
                          observedScreen   app.executor.api/observedScreen
                          centerShapes     app.executor.api/centerShapes
+                         viewerQuery      app.executor.api/viewerQuery
                          beginExecution   app.executor.api/beginExecution
                          finishExecution  app.executor.api/finishExecution
                          abortExecution   app.executor.api/abortExecution}

@@ -12,6 +12,16 @@ export function uiOnly(member: string, reason: string): never {
 }
 
 /**
+ * What the server context needs from the session beyond the frontend plugin context.
+ */
+export interface ServerSession {
+    /** the screen of the user's browser tab on the open file, or null when none reported one */
+    observe: () => ObservedScreen | null;
+    /** the viewer URL of the current page, or null with no file open */
+    viewerUrl: () => string | null;
+}
+
+/**
  * Viewport of the server session (D8). Reading it reads the screen of a browser tab of the same user on the
  * open file (b); moving it needs a tab with "AI follow" on (f, PEN-24). Without such a tab both fail with
  * `ui-only` (c).
@@ -55,13 +65,14 @@ function createViewport(observe: () => ObservedScreen | null): object {
  *
  * - `viewport`: read from the user's browser tab on the file, see {@link createViewport}
  * - `theme`: the theme of the user's browser tab on the file, else `"light"`
- * - `openViewer()`: `ui-only`, it leaves the editor
+ * - `openViewer()`: `ui-only`, it leaves the editor; the error gives the viewer URL of the page (D8)
  * - `openPage(page, true)`: `ui-only`, it opens a new window; `openPage(page)` changes the session's page
  *
  * @param context - the frontend plugin context of the headless workspace
- * @param observe - the screen of the user's browser tab on the open file, or null when none reported one
+ * @param session - what the server session knows beyond the plugin context
  */
-export function createServerContext(context: any, observe: () => ObservedScreen | null): any {
+export function createServerContext(context: any, session: ServerSession): any {
+    const { observe, viewerUrl } = session;
     const viewport = createViewport(observe);
     return new Proxy(context, {
         get(target, prop, receiver) {
@@ -71,7 +82,15 @@ export function createServerContext(context: any, observe: () => ObservedScreen 
                 case "theme":
                     return observe()?.theme ?? "light";
                 case "openViewer":
-                    return () => uiOnly("openViewer()", "it leaves the editor for the viewer");
+                    return () => {
+                        const url = viewerUrl();
+                        uiOnly(
+                            "openViewer()",
+                            url
+                                ? `it leaves the editor for the viewer. The viewer of this page: ${url}`
+                                : "it leaves the editor for the viewer"
+                        );
+                    };
                 case "openPage":
                     return (page: unknown, newWindow?: boolean) => {
                         if (newWindow === true) {

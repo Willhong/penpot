@@ -26,6 +26,7 @@
    [app.main.data.persistence :as dps]
    [app.main.data.workspace.pages :as dwpg]
    [app.main.data.workspace.wasm-text :as dwwt]
+   [app.main.router :as rt]
    [app.main.store :as st]
    [app.plugins.api :as plugins.api]
    [app.plugins.public-utils :as public-utils]
@@ -121,6 +122,18 @@
          :canEdit (boolean (get-in @st/state [:permissions :can-edit]))
          :revn (some-> file-id file-revn)
          :frontendVersion (:full cf/version)}))
+
+(defn ^:export viewerQuery
+  "Query of the viewer URL of the current page, as `penpot.openViewer()`
+  navigates to it (`?screen=viewer&...`), or null with no file open."
+  []
+  (let [state   @st/state
+        file-id (:current-file-id state)
+        page-id (:current-page-id state)]
+    (when (and file-id page-id)
+      (rt/resolve (:router state) :viewer {:file-id file-id
+                                           :page-id page-id
+                                           :section "interactions"}))))
 
 (defn ^:export centerShapes
   "What `penpot.utils.geometry.center` returns; the plugins runtime reaches it

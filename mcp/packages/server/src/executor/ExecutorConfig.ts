@@ -13,6 +13,8 @@ import { dirname, resolve } from "node:path";
  * - `PENPOT_MCP_EXECUTOR_BUNDLE`: path of the frontend `:executor` build's `executor.js`
  * - `PENPOT_MCP_EXECUTOR_WASM_DIR`: directory of `render-wasm.js` / `render-wasm.wasm`
  * - `PENPOT_MCP_EXECUTOR_PUBLIC_URI`: backend URI the executor talks to (the internal one in a deployment)
+ * - `PENPOT_MCP_EXECUTOR_UI_URI`: URI users open Penpot at, for the links the executor gives them (the viewer
+ *   of `openViewer()`); `PENPOT_PUBLIC_URI` by default, else the executor's backend URI
  * - `PENPOT_MCP_SHARED_KEY`: the backend's `mcp` shared key (D11); derived from `PENPOT_SECRET_KEY` otherwise
  * - `PENPOT_MCP_EXECUTOR_FS_READ`: comma-separated directories the executor process may read (Node permission
  *   model); default: the frontend checkout holding the bundle, the wasm directory and this package
@@ -29,6 +31,7 @@ export class ExecutorConfig {
     readonly bundlePath: string;
     readonly wasmDir: string;
     readonly publicUri: string;
+    readonly uiUri: string;
     readonly flags: string;
     readonly version: string;
     readonly sharedKey: string | null;
@@ -51,6 +54,7 @@ export class ExecutorConfig {
         this.bundlePath = ExecutorConfig.require(env, "PENPOT_MCP_EXECUTOR_BUNDLE");
         this.wasmDir = ExecutorConfig.require(env, "PENPOT_MCP_EXECUTOR_WASM_DIR");
         this.publicUri = ExecutorConfig.require(env, "PENPOT_MCP_EXECUTOR_PUBLIC_URI");
+        this.uiUri = env.PENPOT_MCP_EXECUTOR_UI_URI ?? env.PENPOT_PUBLIC_URI ?? this.publicUri;
         this.flags = env.PENPOT_FLAGS ?? "";
         this.version = env.PENPOT_VERSION ?? "";
         this.sharedKey = env.PENPOT_MCP_SHARED_KEY ?? ExecutorConfig.deriveSharedKey(env.PENPOT_SECRET_KEY);

@@ -372,7 +372,10 @@
       (parse-frame-guide-row guide)
 
       "square"
-      (parse-frame-guide-square guide))))
+      (parse-frame-guide-square guide)
+
+      ;; an unknown type is invalid, which the caller's schema check reports
+      nil)))
 
 (defn parse-frame-guides
   [^js guides]

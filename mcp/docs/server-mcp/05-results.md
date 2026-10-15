@@ -230,3 +230,17 @@ upstream 참고: upstream develop의 컴포넌트 관리 API(#12303)는 이 브�
 - 로컬 모드에서 서버 실행을 쓸 때 `import_image`가 브라우저 플러그인 경로만 썼다. `execute_code`와 같은 실행기 경로를 쓴다(원격 모드에서는 도구 자체가 없다).
 
 남은 일: `export_shape`도 서버 실행 연결에서 아직 브라우저 플러그인 경로를 쓴다. 내보내기는 PEN-19에서 다룬다.
+
+## PEN-17 Flow·상호작용·가이드·viewer (2026-10-15, `experiments/pen17_prototype.py`)
+
+| 확인 | 결과 |
+|---|---|
+| `pen17_prototype.js`(dual run): 이동(slide)·오버레이 열기(dissolve, 지연)·토글·닫기·이전 화면·URL 열기·이동(push) 상호작용, 트리거·지연 변경과 삭제, Flow 만들기·이름·시작 보드 변경·삭제, ruler guide(페이지·보드)·위치 변경·삭제, 보드 grid guide, 상호작용과 Flow가 가리키는 보드 삭제 | 반환값, 저장된 도형(상호작용 포함), 저장된 페이지 데이터(Flow, ruler guide)가 같음. 첫 이동 상호작용이 Flow를 자동으로 만들고, 시작 보드가 지워진 Flow는 사라지며, 지워진 보드로 가는 이동은 목적지가 빈 채 남음(브라우저와 같음) |
+| `pen17_refusals.js`(dual run): 잘못된 트리거·동작 종류·목적지(도형, 자기 보드)·빈 URL·도형의 지연 트리거·음수 지연·오버레이의 push·문자 duration·빈 Flow 이름·보드 아닌 Flow 시작·잘못된 guide 방향·위치·종류 | 답과 남은 상태 같음 |
+| viewer(서버가 쓰고 브라우저가 재생) | `openViewer()`는 `ui-only`이며 메시지에 그 페이지의 viewer URL(`PENPOT_MCP_EXECUTOR_UI_URI`, 기본 `PENPOT_PUBLIC_URI`)을 담는다. 그 URL을 브라우저로 열어 서버가 만든 Home 보드의 버튼을 누르면 Detail 보드로 넘어감([화면](../../../.mcp-verify/shots/pen17-viewer.png)) |
+
+고친 결손:
+- `openViewer()`가 이유만 말하고 갈 곳을 알려주지 않았다. 계약(D8 "대신 viewer URL을 돌려줄 수 있다")대로 URL을 준다. 실행기가 아는 backend 주소는 내부 주소일 수 있어 사용자용 UI 주소를 따로 둔다.
+- (브라우저 공통) 없는 동작 종류가 오류 없이 "목적지 없는 이동"으로 저장됐다. 거부한다.
+- (브라우저 공통) 없는 보드 guide 종류에 내부 오류(`No matching clause`)가 났다. 검증 오류로 거부한다.
+- 비교 도구가 페이지 데이터(Flow, ruler guide)도 비교한다.

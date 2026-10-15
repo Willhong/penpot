@@ -125,3 +125,22 @@
               "an action without destination is accepted")
         (t/is (throws? #(set! (.-action inter) #js {:type "navigate-to" :destination board2}))
               "navigating to the parent board is still rejected")))))
+
+(t/deftest unknown-action-types-and-guide-types-are-refused
+  ;; Regression: an unknown action type became a navigation without a
+  ;; destination, and an unknown board guide type failed with an internal
+  ;; "No matching clause" error.
+  (thw/with-wasm-mocks*
+    (fn []
+      (let [store       (ths/setup-store (cthf/sample-file :file1 :page-label :page1))
+            plugin-id   "00000000-0000-0000-0000-000000000000"
+            ^js context (api/create-context plugin-id)
+            _           (set! st/state store)
+            _           (ptk/emit! store #(assoc-in % [:plugins :flags plugin-id :throw-validation-errors] true))
+            ^js board1  (.createBoard context)
+            ^js board2  (.createBoard context)]
+        (t/is (thrown-with-msg? js/Error #"teleport"
+                                (.addInteraction board1 "click" #js {:type "teleport" :destination board2})))
+        (t/is (zero? (alength (.-interactions board1))))
+        (t/is (thrown-with-msg? js/Error #"Value not valid"
+                                (set! (.-guides board1) #js [#js {:type "hexagon" :display true :params #js {}}])))))))
