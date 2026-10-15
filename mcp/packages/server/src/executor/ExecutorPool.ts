@@ -249,7 +249,7 @@ export class ExecutorPool {
                 session.name,
                 result?.commit?.fileId ?? params.fileId ?? "-",
                 Date.now() - started,
-                result?.commit?.changedShapeIds.length ?? 0,
+                result?.commit?.changes ?? 0,
                 outcome
             );
         }

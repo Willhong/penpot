@@ -19,6 +19,8 @@ export interface ExecutorRuntimeConfig {
     wasmDir: string;
     /** default bound for waiting on derived values after the code, in ms */
     settleTimeoutMs: number;
+    /** changes one execution may save at once (D9) */
+    maxChanges: number;
     /** URI users open Penpot at, for the links given to them */
     uiUri: string;
     /** URI the backend is reached at from the executor, when it differs */
@@ -183,7 +185,10 @@ export class ExecutorRuntime {
         );
         let commit;
         try {
-            commit = await this.engine.finishExecution(params.settleTimeoutMs ?? this.config.settleTimeoutMs);
+            commit = await this.engine.finishExecution(
+                params.settleTimeoutMs ?? this.config.settleTimeoutMs,
+                this.config.maxChanges
+            );
         } catch (error) {
             // the save was refused or failed: drop the local edits so the session matches the backend
             await this.engine.abortExecution().catch(() => undefined);

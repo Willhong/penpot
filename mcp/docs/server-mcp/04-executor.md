@@ -103,7 +103,7 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 ```json
 {"result": …, "log": "…",
  "commit": {"saved": true, "fileId": "…", "revnBefore": 0, "revn": 1,
-            "changedShapeIds": ["…"], "lagged": 0,
+            "changedShapeIds": ["…"], "changes": 2, "lagged": 0,
             "computed": {"layout": true, "text": true, "bool": true, "componentSync": true},
             "pending": null},
  "engine": {"frontendVersion": "…", "renderWasm": null}}
@@ -157,13 +157,14 @@ MCP server가 멈출 때(`SIGINT`/`SIGTERM`)는 연결을 닫기 전에 실행�
 | 힙 | **512 MB** (`PENPOT_MCP_EXECUTOR_HEAP_MB`) | D9는 256 MB를 '측정해 조정'으로 정했다. 도형 1개 파일에서도 V8 힙을 release 빌드 285 MB, 개발 빌드 350 MB 썼다. 256 MB에서는 GC가 계속 돌다 실제 파일에서 넘친다 |
 | render-wasm 메모리 | 초기 256 MB, 힙 밖 | `external` 약 330–350 MB |
 | 프로세스 RSS | 약 0.5–0.7 GB | 측정 |
+| 한 번에 저장하는 변경 | 5,000개 (`PENPOT_MCP_EXECUTOR_MAX_CHANGES`) | D9. 파생 값 변경까지 저장 직전에 센다. 넘으면 `resource-limit`, 저장 없음(PEN-9에서 구현). 도형 하나를 만들고 이름을 붙이면 변경 2개다 |
 | 동시 실행 | 사용자당 2, 전체 CPU 수 | D9. 넘으면 `resource-limit` |
 | 유휴 세션 | 15분 뒤 종료 | `PENPOT_MCP_EXECUTOR_IDLE_S` |
 | 살아 있는 세션(프로세스) 수 | 사용자당 4, 전체는 메모리 1GB당 1 | `PENPOT_MCP_EXECUTOR_SESSIONS_PER_USER`, `PENPOT_MCP_EXECUTOR_SESSIONS_MAX`. 넘으면 가장 오래 쉰 유휴 세션을 닫는다(그 세션의 `storage`와 열린 파일은 사라진다). 모두 실행 중이면 `resource-limit`. PEN-13 시험 중 세션 16개(약 13GB)가 쌓여 backend가 메모리 부족으로 죽은 뒤 넣었다 |
 | 첫 호출(프로세스 시작) | 약 4–5초 | PEN-3 측정 |
 | 이어지는 호출 | 0.04–0.1초 (사각형 1개) | PEN-3 측정 |
 
-로그 한 줄: 사용자 token 지문, 세션, 파일 id, 소요 시간, 바뀐 도형 수, 결과 코드. 코드·결과·token은 남기지 않는다. 예상하지 못한 엔진 오류는 stack만 남긴다.
+로그 한 줄: 사용자 token 지문, 세션, 파일 id, 소요 시간, 저장한 변경 수, 결과 코드. 코드·결과·token은 남기지 않는다. 실패한 도구 호출의 오류 줄에는 실행기 오류의 코드만 남긴다. 메시지에는 사용자 코드가 던진 문구나 거부된 값이 들어갈 수 있기 때문이다(PEN-9에서 고침, 클라이언트는 전체 메시지를 받는다). 예상하지 못한 엔진 오류는 stack만 남긴다.
 
 ## 7. UI 전용 member (D8) — 현재 상태
 

@@ -48,6 +48,8 @@ export interface CommitReport {
     revnBefore: number | null;
     revn: number | null;
     changedShapeIds: string[];
+    /** number of changes the save held, derived ones included; at most the server's limit (D9) */
+    changes?: number;
     /** number of changes of other sessions the backend applied in between */
     lagged: number;
     /** always all true: an execution whose derived values do not finish fails with `resource-limit` instead */

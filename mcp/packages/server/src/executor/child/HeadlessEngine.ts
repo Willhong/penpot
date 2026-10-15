@@ -36,7 +36,7 @@ interface ExecutorBundle {
     centerShapes(shapes: unknown[]): { x: number; y: number } | null;
     viewerQuery(): string | null;
     beginExecution(options: { ifUnchangedSinceRevn?: number }): void;
-    finishExecution(options: { settleTimeout: number }): Promise<CommitReport>;
+    finishExecution(options: { settleTimeout: number; maxChanges: number }): Promise<CommitReport>;
     abortExecution(): Promise<void>;
     applyHistory(direction: "undo" | "redo"): Promise<number>;
     historyStatus(): { undo: number; redo: number };
@@ -138,9 +138,10 @@ export class HeadlessEngine {
      * Completes the derived values of the execution and saves it in one request.
      *
      * @param settleTimeoutMs - bound for waiting on layout and text work
+     * @param maxChanges - number of changes the save may hold; beyond it nothing is saved (D9)
      */
-    finishExecution(settleTimeoutMs: number): Promise<CommitReport> {
-        return this.bundle.finishExecution({ settleTimeout: settleTimeoutMs });
+    finishExecution(settleTimeoutMs: number, maxChanges: number): Promise<CommitReport> {
+        return this.bundle.finishExecution({ settleTimeout: settleTimeoutMs, maxChanges });
     }
 
     /**

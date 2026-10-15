@@ -54,6 +54,7 @@ export class ExecutorProcess {
                 PENPOT_EXECUTOR_BUNDLE: config.bundlePath,
                 PENPOT_EXECUTOR_WASM_DIR: config.wasmDir,
                 PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS: String(config.settleTimeoutMs),
+                PENPOT_EXECUTOR_MAX_CHANGES: String(config.maxChanges),
                 // the bundle builds the links it hands out on the users' address; it reaches the backend
                 // at the executor's (internal) one
                 PENPOT_PUBLIC_URI: config.uiUri,

@@ -7,6 +7,8 @@
  *  - user code cannot reach the process (`process`, `require`, `fetch`, modules, constructor escapes);
  *  - an endless loop and a memory blow-up end with `resource-limit`, save nothing, and the session
  *    starts afresh on the next call;
+ *  - an execution with more changes than one save may hold (D9) ends with `resource-limit` and saves
+ *    nothing;
  *  - a restarted pool has no state of the previous one.
  *
  * Needs the stack (scripts/mcp-verify-env), the executor bundle (frontend/scripts/build-executor) and
@@ -214,6 +216,34 @@ async function main(): Promise<void> {
             !settleAfter.names.includes("settle-board") &&
             settled.ok,
         { unsettled, settled, revn: [settleBefore.revn, settleAfter.revn] }
+    );
+
+    // more changes than one save may hold (D9): resource-limit, nothing saved; under the limit the commit
+    // reports how many changes it held
+    const limited = new ExecutorPool(new ExecutorConfig({ ...env, PENPOT_MCP_EXECUTOR_MAX_CHANGES: "20" }));
+    const manyBefore = await fileState(editorFile);
+    const many = await outcome(() =>
+        limited.execute(token("editor"), "many", {
+            code: "for (let i = 0; i < 30; i++) { penpot.createRectangle().name = 'many-rect'; } return 1;",
+            fileId: editorFile,
+        })
+    );
+    const manyAfter = await fileState(editorFile);
+    const few = await limited.execute(token("editor"), "many", {
+        code: "for (let i = 0; i < 3; i++) { penpot.createRectangle().name = 'few-rect'; } return 1;",
+        fileId: editorFile,
+    });
+    await limited.close();
+    check(
+        "tooManyChanges",
+        many.code === "resource-limit" &&
+            (many.message ?? "").includes("one save holds at most 20") &&
+            manyAfter.revn === manyBefore.revn &&
+            !manyAfter.names.includes("many-rect") &&
+            few.commit?.saved === true &&
+            (few.commit?.changes ?? 0) > 0 &&
+            (few.commit?.changes ?? 99) <= 20,
+        { many, fewChanges: few.commit?.changes, revn: [manyBefore.revn, manyAfter.revn] }
     );
 
     // memory blow-up

@@ -71,7 +71,7 @@
                    (or (#{:object-not-found :not-found :save-permission-denied} code)
                        (= type :not-found)) "not-found"
                    (= code :precondition-failed) "precondition-failed"
-                   (= code :settle-timeout) "resource-limit"
+                   (#{:settle-timeout :too-many-changes} code) "resource-limit"
                    (= code :revn-conflict) "revn-conflict"
                    (= code :vern-conflict) "vern-conflict"
                    (= type :validation) "validation"
@@ -252,7 +252,9 @@
                      (rx/subs! (fn [{:keys [redo-changes save-undo?] :as commit}]
                                  (swap! execution
                                         (fn [state]
-                                          (cond-> (update state :changed into (mapcat change-ids) redo-changes)
+                                          (cond-> (-> state
+                                                      (update :changed into (mapcat change-ids) redo-changes)
+                                                      (update :change-count + (count redo-changes)))
                                             ;; what a browser would keep for undo (PEN-20)
                                             save-undo?
                                             (update :commits conj (select-keys commit [:redo-changes :undo-changes]))))))))
@@ -276,6 +278,7 @@
                        :precondition (some-> opts .-ifUnchangedSinceRevn)
                        :revn-before (some-> file-id file-revn)
                        :changed #{}
+                       :change-count 0
                        :commits []
                        :saves 0
                        :refused 0
@@ -314,10 +317,12 @@
 (defn ^:export finishExecution
   "Completes the derived values of the execution (layout, text size and
   position data, booleans, component sync) and saves them with its edits.
-  Option `settleTimeout` (ms) bounds the wait for derived values. Resolves to
-  the commit report of 03-runtime-contract §3."
+  Options: `settleTimeout` (ms) bounds the wait for derived values;
+  `maxChanges` the number of changes one save may hold (D9). Resolves to the
+  commit report of 03-runtime-contract §3."
   [^js opts]
-  (let [settle-timeout (or (some-> opts .-settleTimeout) 10000)]
+  (let [settle-timeout (or (some-> opts .-settleTimeout) 10000)
+        max-changes    (or (some-> opts .-maxChanges) 5000)]
     (-> (p/let [_         (when-let [reloading (:reloading @execution)]
                             (p/race [reloading (p/delay settle-timeout)]))
                 _         (when (pos? (:refused @execution))
@@ -336,6 +341,13 @@
                                                       (str/join "; "))
                                                  "); nothing was saved")
                                             {:type :resource-limit :code :settle-timeout})))
+                ;; D9: one save holds at most `max-changes` changes, derived
+                ;; ones included
+                _         (let [n (:change-count @execution)]
+                            (when (> n max-changes)
+                              (throw (ex-info (str "the execution made " n " changes; one save holds at most "
+                                                   max-changes "; nothing was saved")
+                                              {:type :resource-limit :code :too-many-changes}))))
                 ;; D4, checked again right before the save: another session's
                 ;; change may have arrived while the code ran
                 _         (let [{:keys [precondition file-id]} @execution
@@ -379,6 +391,8 @@
                :revnBefore before
                :revn revn
                :changedShapeIds (clj->js (mapv str changed))
+               ;; changes the save held, derived ones included (D9)
+               :changes (if (pos? saves) (:change-count state) 0)
                ;; changes of other sessions applied in between
                :lagged (if (and (pos? saves) before)
                          (max 0 (- answered before (dec saves)))

@@ -40,6 +40,7 @@ const runtime = new ExecutorRuntime(
         bundlePath: requireEnv("PENPOT_EXECUTOR_BUNDLE"),
         wasmDir: requireEnv("PENPOT_EXECUTOR_WASM_DIR"),
         settleTimeoutMs: parseInt(process.env.PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS ?? "10000", 10),
+        maxChanges: parseInt(process.env.PENPOT_EXECUTOR_MAX_CHANGES ?? "5000", 10),
         uiUri: requireEnv("PENPOT_PUBLIC_URI"),
         backendUri: process.env.PENPOT_EXECUTOR_BACKEND_URI ?? null,
     },

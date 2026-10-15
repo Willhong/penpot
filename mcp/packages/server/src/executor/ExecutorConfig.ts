@@ -44,6 +44,8 @@ export class ExecutorConfig {
     readonly sessionsPerUser: number;
     readonly maxSessions: number;
     readonly settleTimeoutMs: number;
+    /** changes one execution may save at once (D9) */
+    readonly maxChanges: number;
     /** Redis for the request ledger (D5), shared by MCP server instances; in memory without it */
     readonly redisUri: string | null;
     readonly tenant: string;
@@ -83,6 +85,7 @@ export class ExecutorConfig {
             Math.max(2, Math.floor(totalmem() / 1024 ** 3))
         );
         this.settleTimeoutMs = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_SETTLE_TIMEOUT_MS, 10000);
+        this.maxChanges = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_MAX_CHANGES, 5000);
         this.redisUri = env.PENPOT_MCP_REDIS_URI ?? null;
         this.tenant = env.PENPOT_TENANT ?? "default";
     }

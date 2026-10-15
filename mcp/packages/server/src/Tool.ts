@@ -65,7 +65,14 @@ export abstract class Tool<TArgs extends object> {
             this.logger.info("Tool execution #%d complete: %s", executionId, this.getToolName());
             return result;
         } catch (error) {
-            this.logger.error("Tool execution #%d failed: %s; error: %s", executionId, this.getToolName(), error);
+            // D9: an executor error's message can carry user content (an exception of the user's code, a
+            // refused value), so only its code is logged; the client still gets the message
+            this.logger.error(
+                "Tool execution #%d failed: %s; error: %s",
+                executionId,
+                this.getToolName(),
+                error instanceof ExecutorError ? `[${error.code}]` : error
+            );
             return new TextResponse(`Tool execution failed: ${String(error)}`);
         }
     }

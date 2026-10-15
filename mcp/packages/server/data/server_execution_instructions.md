@@ -44,4 +44,5 @@ Where this section differs from the rest of the overview, this section applies.
   server), retry with the same `requestId`, or ask `request_status` first: it never applies a call twice.
 * Error codes: `ui-only` (needs a browser), `forbidden`, `not-found` (also for a file you may only view),
   `validation` (invalid value), `precondition-failed`, `revn-conflict`, `vern-conflict`, `cancelled`,
-  `resource-limit` (120 s or memory exceeded), `execution-error` (your code threw), `engine-error`.
+  `resource-limit` (120 s, memory, or more than 5,000 changes in one call exceeded: split large work into
+  several calls), `execution-error` (your code threw), `engine-error`.
