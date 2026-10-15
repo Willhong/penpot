@@ -3,6 +3,8 @@ import "reflect-metadata";
 import { TextResponse, ToolResponse } from "./ToolResponse";
 import type { PenpotMcpServer, SessionContext } from "./PenpotMcpServer";
 import { createLogger } from "./logger";
+import { ExecutorError } from "./executor/ExecutorError";
+import type { ExecuteParams, ExecutionResult } from "./executor/ExecutorProtocol";
 
 /**
  * An empty arguments class for tools that do not require any parameters.
@@ -113,6 +115,34 @@ export abstract class Tool<TArgs extends object> {
      */
     protected getSessionContext(): SessionContext | undefined {
         return this.mcpServer.getSessionContext();
+    }
+
+    /**
+     * Whether this request runs code in the server-side executor rather than the browser plugin.
+     */
+    protected usesServerExecution(): boolean {
+        return this.mcpServer.executorPool !== null && this.getSessionContext()?.serverExecution === true;
+    }
+
+    /**
+     * Runs code in the server-side executor session `sessionId` of the request's user.
+     *
+     * @param params - the execution
+     * @param sessionId - the executor session, `default` when omitted
+     * @param signal - aborts the execution before its save (D6)
+     * @param requestId - the client's request ID, for deduplication (D5)
+     */
+    protected executeOnServer(
+        params: ExecuteParams,
+        sessionId?: string,
+        signal?: AbortSignal,
+        requestId?: string
+    ): Promise<ExecutionResult> {
+        const token = this.getSessionContext()?.userToken;
+        if (!token) {
+            throw new ExecutorError("forbidden", "server-side execution needs the user's MCP token (userToken)");
+        }
+        return this.mcpServer.executorPool!.execute(token, sessionId ?? "default", params, signal, requestId);
     }
 
     public getInputSchema() {

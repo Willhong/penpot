@@ -6,7 +6,6 @@ import "reflect-metadata";
 import { PenpotMcpServer } from "../PenpotMcpServer";
 import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
 import { ExecuteCodeTaskParams } from "@penpot/mcp-common";
-import { ExecutorError } from "../executor/ExecutorError";
 
 /**
  * Arguments class for ExecuteCodeTool
@@ -126,21 +125,15 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
         "Listeners added with `penpot.on` stay until the session ends.";
 
     protected async executeCore(args: ExecuteCodeArgs, signal?: AbortSignal): Promise<ToolResponse> {
-        const pool = this.mcpServer.executorPool;
-        if (pool && this.getSessionContext()?.serverExecution) {
-            const token = this.getSessionContext()?.userToken;
-            if (!token) {
-                throw new ExecutorError("forbidden", "server-side execution needs the user's MCP token (userToken)");
-            }
-            const result = await pool.execute(
-                token,
-                args.sessionId ?? "default",
+        if (this.usesServerExecution()) {
+            const result = await this.executeOnServer(
                 {
                     code: args.code,
                     fileId: args.fileId,
                     pageId: args.pageId,
                     ifUnchangedSinceRevn: args.ifUnchangedSinceRevn,
                 },
+                args.sessionId,
                 signal,
                 args.requestId
             );

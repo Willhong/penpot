@@ -500,13 +500,17 @@
             (fn [svg-data]
               (->> (svg/upload-images svg-data file-id)
                    (rx/map #(assoc svg-data :image-data %)))))
-           (rx/map
+           (rx/mapcat
             (fn [svg-data]
-              (svg/add-svg-shapes
-               id
-               svg-data
-               position
-               {:ignore-selection? true
-                :change-selection? false})))
-           (rx/tap on-success)
+              (rx/of (svg/add-svg-shapes
+                      id
+                      svg-data
+                      position
+                      {:ignore-selection? true
+                       :change-selection? false})
+                     ;; reports success once the shapes are in the file, so
+                     ;; the caller finds them (and a group its children)
+                     (ptk/reify ::svg-shape-with-images-created
+                       ptk/EffectEvent
+                       (effect [_ _ _] (on-success))))))
            (rx/catch on-error)))))

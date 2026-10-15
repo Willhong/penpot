@@ -193,6 +193,11 @@ export class ExecutorRuntime {
             return error;
         }
         const code = (error as { code?: unknown })?.code;
+        const text = error instanceof Error ? error.message : String(error);
+        if (/Code: :createShapeFromSvg\b/.test(text)) {
+            // 03-runtime-contract §4: an SVG that does not parse is an input problem of its own
+            return new ExecutorError("svg-parser", text);
+        }
         if (typeof code === "string" && code !== "engine-error" && ExecutorRuntime.WORKSPACE_CODES.has(code)) {
             return new ExecutorError(code as any, (error as Error).message);
         }

@@ -18,6 +18,7 @@ import type {
     ExecutorRequest,
     ExecutorResponse,
 } from "../ExecutorProtocol";
+import { installCjsInterop } from "./CjsInterop";
 import { ExecutorRuntime } from "./ExecutorRuntime";
 import { MemoryStorage } from "./MemoryStorage";
 import { repairProcessIntrinsics } from "./Sandbox";
@@ -27,6 +28,9 @@ import { repairProcessIntrinsics } from "./Sandbox";
 
 // before the workspace bundle is imported (see `repairProcessIntrinsics`)
 repairProcessIntrinsics();
+
+// before the workspace bundle is imported: its CommonJS npm imports (see `installCjsInterop`)
+installCjsInterop(requireEnv("PENPOT_EXECUTOR_BUNDLE"));
 
 const runtime = new ExecutorRuntime(
     {

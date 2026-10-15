@@ -211,3 +211,22 @@ upstream 참고: upstream develop의 컴포넌트 관리 API(#12303)는 이 브�
 비교 도구: 저장된 라이브러리 자산을 새 실행기 세션으로 두 파일에서 읽어 비교한다(`get-file` JSON은 자산을 담지 않는다). 메시지 안의 시각 값은 정규화한다. 시험용 editor 프로필 언어를 브라우저와 같은 `ko`로 둔다.
 
 바꾸지 않은 차이(브라우저와 서버가 같음, PEN-9 예외 목록 후보): 색 토큰이 `"not a color"` 같은 값을 받는다. 빈 색 이름을 오류 없이 받는다. 맞지 않는 속성(`fontFamilies`를 사각형에)에 토큰을 적용하면 오류 없이 아무것도 하지 않는다.
+
+## PEN-16 이미지·SVG (2026-10-15, `experiments/pen16_media.py`)
+
+| 확인 | 결과 |
+|---|---|
+| `pen16_media.js`(dual run): 바이트(PNG)와 공개 URL로 이미지 올리기, 사각형·원 이미지 채우기, 경로·그라데이션·그룹·회전이 든 SVG, 내장(data URI)·외부 이미지가 든 SVG | 반환값과 저장된 도형 15개 같음. 이미지는 backend media RPC로 올라가고(8×6, 72×48) SVG 안 이미지는 이미지 채우기 사각형이 됨 |
+| `pen16_refusals.js`(dual run): 루프백·backend 내부 주소·클라우드 메타데이터·사설망 URL, `file:`·`ftp:` URL, 이미지가 아닌 URL, 형식을 속인 데이터, 40MB 데이터, XXE·엔티티 폭탄 SVG, 스크립트·`onload`·`javascript:` 링크가 든 SVG, foreignObject, 깨진 SVG, SVG가 아닌 문자열, 내부 주소·`file:` 이미지를 가리키는 SVG | 답과 남은 도형 같음. URL·데이터는 backend가 거부(SSRF 검사, 리다이렉트 3회 제한, MIME·크기 검사). XXE·엔티티 폭탄은 파싱 단계에서 거부. 스크립트·이벤트·`javascript:`는 버려짐. 막힌 이미지는 빠진 채 가져옴 |
+| 서버만: 깨진 SVG로 실행이 끝남 | `svg-parser` 오류(03 §4), 저장 없음 |
+| 서버만: 원격(multi-user) 모드의 도구 목록 | 서버 파일을 읽는 `import_image`가 없음 |
+
+외부 URL은 실행기가 직접 받지 않는다. 브라우저와 같이 backend `create-file-media-object-from-url`이 받으므로 backend의 SSRF 보호(`app.util.ssrf`)가 그대로 적용된다.
+
+고친 결손:
+- **서버에서 SVG 가져오기가 항상 실패했다**(계약의 blocker E6). `:executor` 빌드는 npm 패키지를 Node의 ESM `import`로 불러오는데, SVG 파서가 쓰는 `sax`는 내보내기를 실행 중에 붙이는 CommonJS라 Node가 이름 붙은 내보내기를 찾지 못했다(`sax.parser`가 없음). 실행기가 번들을 불러오기 전에 모듈 훅(`CjsInterop.ts`, `module.registerHooks`)을 걸어 번들이 불러오는 CommonJS 패키지를 이름 붙은 내보내기가 있는 ESM으로 감싼다. 권한 모델이 worker를 막으므로 같은 스레드 훅을 쓴다.
+- **`createShapeFromSvgWithImages`가 도형을 추가하기 전에 결과 객체를 만들어 `children`이 없었다**(브라우저 공통). 도형이 들어간 뒤 돌려준다.
+- 깨진 SVG의 오류 코드를 계약대로 `svg-parser`로 돌려준다.
+- 로컬 모드에서 서버 실행을 쓸 때 `import_image`가 브라우저 플러그인 경로만 썼다. `execute_code`와 같은 실행기 경로를 쓴다(원격 모드에서는 도구 자체가 없다).
+
+남은 일: `export_shape`도 서버 실행 연결에서 아직 브라우저 플러그인 경로를 쓴다. 내보내기는 PEN-19에서 다룬다.

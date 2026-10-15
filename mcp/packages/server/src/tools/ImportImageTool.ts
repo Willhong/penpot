@@ -118,6 +118,11 @@ export class ImportImageTool extends Tool<ImportImageArgs> {
                 ${args.width ?? "undefined"}, ${args.height ?? "undefined"});
             return { shapeId: rectangle.id };
             `;
+        if (this.usesServerExecution()) {
+            // the server-side executor of the session, as `execute_code` uses it
+            const result = await this.executeOnServer({ code }, args.sessionId);
+            return new TextResponse(JSON.stringify({ ...(result.result as object), commit: result.commit }, null, 2));
+        }
         const task = new ExecuteCodePluginTask({ code: code });
         const executionResult = await this.mcpServer.pluginBridge.executePluginTask(task, args.sessionId);
 
