@@ -4,7 +4,8 @@
  * Enabled by `PENPOT_EXECUTOR_TRACE_API=1`. Each object user code gets from the API is wrapped in a proxy
  * that records `<kind>.<member>`, where the kind is the object's `Symbol.toStringTag` (`ShapeProxy`,
  * `PageProxy`, ...; shapes and tokens add their `type`, as in `ShapeProxy:rectangle`) or, for a plain object, the path
- * it was reached by (`penpot.utils.geometry`). At the end of each execution the members it touched go to
+ * it was reached by (`penpot.utils.geometry`). A subscription also records its event, as in
+ * `penpot.on:shapechange`. At the end of each execution the members it touched go to
  * stdout as one line starting with {@link ApiTrace.MARKER}. Values passed back into the API are unwrapped,
  * so the API sees its own objects.
  *
@@ -72,7 +73,11 @@ export class ApiTrace {
 
     private wrapFunction(fn: Function, owner: object, path: string): Function {
         const trace = this;
+        const subscription = /\.(on|off|addListener|removeListener)$/.test(path);
         return function (...args: unknown[]) {
+            if (subscription && typeof args[0] === "string") {
+                trace.members.add(`${path}:${args[0]}`);
+            }
             const result = fn.apply(
                 owner,
                 args.map((arg) => trace.unwrap(arg))

@@ -28,6 +28,7 @@ function root(): any {
         link: (action: { destination: unknown; also: unknown[] }) => action.destination === a && action.also[0] === b,
         bytes: () => Uint8Array.from([1, 2, 3]),
         later: async () => shape("later"),
+        on: (_event: string, _callback: unknown) => "listener",
         a,
     });
 }
@@ -109,6 +110,15 @@ describe("ApiTrace", () => {
             },
             { name: "TypeError", message: /Cannot add property missing, object is not extensible/ }
         );
+    });
+
+    it("records the event of a subscription", () => {
+        const { trace, penpot, lines } = traced();
+        assert.equal(
+            penpot.on("shapechange", () => undefined),
+            "listener"
+        );
+        assert.deepEqual(flushed(trace, lines), ["penpot.on", "penpot.on:shapechange"]);
     });
 
     it("wraps what promises resolve to", async () => {

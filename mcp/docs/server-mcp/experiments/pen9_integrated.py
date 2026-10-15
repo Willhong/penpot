@@ -24,6 +24,10 @@
 #   session, and the server path creates, changes, reads, exports and undoes
 #   the same design. Meanwhile the main container's process list is sampled:
 #   it must never hold a browser process (D10).
+# - aiPresence (D3): the owner's tab lists the AI's session as "AI (name)"
+#   with an AI badge, apart from the people.
+# - latency (D7): from a save's answer to both tabs showing it, p95 of 20
+#   single saves at most 1 s and of 5 saves of 1,000 shapes at most 3 s.
 # - lateOpen / live / reconnect / refresh / mcpRestart: tabs that open the
 #   file afterwards, that stay open while the AI edits, that lose their
 #   notification socket, that reload, and an MCP server restart all end with
@@ -426,6 +430,66 @@ return { title: card.children.find((c) => c.name === "title").characters,
         matches = self.tab_matches(("p1", "p2"), self.file_id)
         self.check("lateOpen", all(v["ok"] for v in matches.values()), tabs=matches)
 
+    def latency(self):
+        """D7: from the save's answer to both tabs showing it, p95 over single saves (1 s) and over
+        saves of 1,000 shapes (3 s)."""
+        file_id, page_id = mcpv.create_file("pen9-latency")
+        self.tabs.open(file_id, page_id)
+        session = f"{self.session}-latency"
+        self.run("return 1;", fileId=file_id, session=session)
+
+        def measure(count, rounds):
+            samples = []
+            for n in range(rounds):
+                watch = self.tabs.observe(expect=count, timeout=30000)
+                answered = None
+                self.run(f"for (let i = 0; i < {count}; i++) {{ const r = penpot.createRectangle(); "
+                         f"r.name = 'lat-{count}-{n}-' + i; }} return 1;", session=session)
+                answered = time.time() * 1000
+                report = watch.report()
+                for label, tab in report.items():
+                    seen = [s["seenAt"] for s in tab["newShapes"].values()]
+                    # the last shape of the save to show; a save not shown in full counts as missing
+                    samples.append(max(0.0, max(seen) - answered) / 1000 if len(seen) >= count else None)
+            return samples
+
+        def p95(samples):
+            values = sorted(s for s in samples if s is not None)
+            return values[min(len(values) - 1, math.ceil(0.95 * len(values)) - 1)] if values else None
+
+        single = measure(1, 20)
+        batch = measure(1000, 5)
+        result = {"single": {"samples": len(single), "missing": single.count(None), "p95": p95(single),
+                             "max": max((s for s in single if s is not None), default=None)},
+                  "batch1000": {"samples": len(batch), "missing": batch.count(None), "p95": p95(batch),
+                                "max": max((s for s in batch if s is not None), default=None)}}
+        self.check("latency",
+                   result["single"]["missing"] == 0 and result["batch1000"]["missing"] == 0
+                   and result["single"]["p95"] is not None and result["single"]["p95"] <= 1.0
+                   and result["batch1000"]["p95"] is not None and result["batch1000"]["p95"] <= 3.0,
+                   **result)
+        self.tabs.open(self.file_id, self.page_id)
+
+    def ai_presence(self):
+        """D3: a person with the file open sees the AI's session apart, as "AI (name)" with a badge."""
+        self.tabs.open(self.file_id, self.page_id)
+        self.run("return 1;")
+        time.sleep(1.5)
+        script = """
+const task = await taskSpace(%d);
+const page = task.page("p1");
+const seen = await page.evaluate(() => [...document.querySelectorAll("[data-testid=active-users-list] li")]
+  .map((li) => ({ title: li.title, ai: li.dataset.ai === "true", badge: li.querySelector("span") ? li.querySelector("span").textContent : null })));
+await page.screenshot({ path: %s, clip: { x: 1300, y: 0, width: 408, height: 52 } });
+console.log("RESULT=" + JSON.stringify(seen));
+""" % (self.space, json.dumps(str(mcpv.STATE / "shots" / "pen9-ai-presence.png")))
+        seen = observers.marked(observers.ego(script), "RESULT=")
+        ai = [s for s in seen if s["ai"]]
+        self.check("aiPresence",
+                   len(ai) == 1 and ai[0]["title"] == "AI (MCPV Editor)" and ai[0]["badge"] == "AI"
+                   and any(not s["ai"] and s["title"] == "MCPV Owner" for s in seen),
+                   sessions=seen)
+
     def live(self):
         started = time.monotonic()
         self.run("""
@@ -665,7 +729,8 @@ def main():
     parser.add_argument("--space", type=int, required=True)
     args = parser.parse_args()
     run = Pen9(args.space)
-    steps = (run.cross_feature, run.plugin_path, run.browserless, run.late_open, run.live, run.reconnect, run.refresh,
+    steps = (run.cross_feature, run.plugin_path, run.browserless, run.late_open, run.ai_presence, run.latency,
+             run.live, run.reconnect, run.refresh,
              run.mcp_restart, run.robustness, lambda: svg_renderer(run))
     for step in steps:
         try:

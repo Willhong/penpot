@@ -45,6 +45,7 @@ RUNS = [
     ("pen20", "pen20_history.py", True, 2400),
     ("pen24", "pen24_follow.py", True, 1200),
     ("pen9-integrated", "pen9_integrated.py", True, 2400),
+    ("pen9-gaps", "pen9_gaps.py", True, 1800),
 ]
 
 OUT = mcpv.STATE / "pen9" / "regression"

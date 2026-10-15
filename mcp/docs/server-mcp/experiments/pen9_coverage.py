@@ -114,6 +114,19 @@ TOKENS = {"color": "TokenColor", "spacing": "TokenSpacing", "borderRadius": "Tok
           "rotation": "TokenRotation", "textCase": "TokenTextCase", "textDecoration": "TokenTextDecoration",
           "typography": "TokenTypography", "shadow": "TokenShadow"}
 ROOTS = {"penpot": ["Penpot"], "penpotMgmt": ["PenpotMgmt"]}
+# members whose declared type the parser cannot follow: `PathCommand` is not exported, so the inventory
+# (and `declarations`) list its members under `Path`
+UNTYPED = {"commands": [("Path", "")]}
+# members no MCP code can use, so a run cannot cover them: (interface, member or "*") -> reason
+NOT_APPLICABLE = {
+    ("Context", "addListener"): "`Penpot` omits it (Omit<Context, 'addListener' | 'removeListener' | 'management'>)",
+    ("Context", "removeListener"): "`Penpot` omits it",
+    ("Context", "management"): "`Penpot` omits it; MCP code has `penpotMgmt`",
+    ("LocalStorage", "*"): "the MCP plugin manifest has no allow:localstorage permission: `penpot.localStorage` "
+                           "refuses in a browser and on the server alike (pen9_gaps.py `context`)",
+}
+# elements of nested arrays the inventory does not list on their own
+IGNORED_KINDS = re.compile(r"(^GradientStopProxy$|\.gradient\.stops$)")
 GENERIC = {"Omit", "Pick", "Partial", "Promise", "Array", "Record", "Readonly", "Exclude"}
 
 
@@ -172,6 +185,8 @@ def resolve_kind(kind, decls, unions):
         return [(TOKENS[sub], "")] if sub in TOKENS else [("TokenBase", "")]
     if kind in TAGS:
         return [(i, "") for i in TAGS[kind]]
+    if IGNORED_KINDS.search(kind):
+        return [("", "")]
     # a path: the parent kind's member, through its declared type
     parent, _, member = kind.rpartition(".")
     call = member.endswith("()")
@@ -187,7 +202,7 @@ def resolve_kind(kind, decls, unions):
             else:
                 if call:
                     text = text.split("=>")[-1]
-                out += [(t, "") for t in resolve_type(text, decls, unions)]
+                out += [(t, "") for t in resolve_type(text, decls, unions)] or UNTYPED.get(member, [])
     return out
 
 
@@ -201,10 +216,15 @@ def report(_args):
     covered, unknown_kinds = set(), set()
     for entry in traced:
         kind, _, member = entry.rpartition(".")
+        member, _, event = member.partition(":")
+        if event:
+            covered.add(("EventsMap", event))
         targets = resolve_kind(kind, decls, unions)
         if not targets:
             unknown_kinds.add(kind)
         for interface, prefix in targets:
+            if not interface:
+                continue
             for owner in ancestors(interface, decls):
                 covered.add((owner, prefix + member))
 
@@ -219,8 +239,15 @@ def report(_args):
             area = gen_inventory.area_of(interface, name)
             kind = gen_inventory.classify(interface, name, is_method, readonly, area)
             ran = (interface, name) in covered
+            reason = NOT_APPLICABLE.get((interface, name)) or NOT_APPLICABLE.get((interface, "*"))
             rows.append({"interface": interface, "member": name, "area": area,
-                         "ticket": gen_inventory.AREAS[area][0], "class": kind, "ran": ran})
+                         "ticket": gen_inventory.AREAS[area][0], "class": kind, "ran": ran,
+                         **({"notApplicable": reason} if reason and not ran else {})})
+            if reason and not ran:
+                by_area.setdefault(area, {"ticket": gen_inventory.AREAS[area][0], "members": 0, "ran": 0,
+                                          "valueObjects": 0, "valueObjectsRan": 0, "notRun": []})
+                by_area[area].setdefault("notApplicable", []).append(f"{interface}.{name}")
+                continue
             entry = by_area.setdefault(area, {"ticket": gen_inventory.AREAS[area][0], "members": 0, "ran": 0,
                                               "valueObjects": 0, "valueObjectsRan": 0, "notRun": []})
             if kind == "data":
@@ -232,10 +259,11 @@ def report(_args):
                 if not ran:
                     entry["notRun"].append(f"{interface}.{name}")
     tools = {tool: tool in tools_run for tool, _, _ in gen_inventory.MCP_TOOL_AREA.values()}
-    behaviour = [r for r in rows if r["class"] != "data"]
+    behaviour = [r for r in rows if r["class"] != "data" and "notApplicable" not in r]
     summary = {
         "members": len(behaviour), "ran": sum(r["ran"] for r in behaviour),
-        "valueObjects": len(rows) - len(behaviour),
+        "notApplicable": sum(1 for r in rows if "notApplicable" in r),
+        "valueObjects": sum(1 for r in rows if r["class"] == "data"),
         "valueObjectsRan": sum(r["ran"] for r in rows if r["class"] == "data"),
         "tools": tools, "unknownKinds": sorted(unknown_kinds), "tracedEntries": len(traced),
     }
