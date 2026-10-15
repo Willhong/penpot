@@ -343,7 +343,8 @@ return 1;""", fileId=self.file_id)
             thread = threading.Thread(target=run)
             thread.start()
             time.sleep(3)
-            restart_mcp(hard=(mode == "crash"))
+            # a graceful stop as a deployment does it: SIGTERM to the server process only
+            restart_mcp(hard=(mode == "crash"), signal="TERM")
             thread.join()
             after = backend_state(self.file_id)
             self.ai = mcp_client.Client(mcpv.token("editor", "mcp"), executor="server")
@@ -362,10 +363,12 @@ return 1;""", fileId=self.file_id)
         self.check("restartInFlight", ok, **report)
 
 
-def restart_mcp(hard=False):
-    """Restarts the MCP server: Ctrl-C (it stops, its executors get the signal too), or SIGKILL of the server
-    alone, as a crash would."""
+def restart_mcp(hard=False, signal="INT"):
+    """Restarts the MCP server: Ctrl-C (`signal="INT"`, the whole process group gets it, executors and
+    the `pnpm` wrapper included), SIGTERM of the server alone (`signal="TERM"`, as a container stop sends
+    it), or SIGKILL of the server alone (`hard`), as a crash would."""
     stop = ("pkill -9 -f 'dist/[i]ndex.js --multi-user'" if hard
+            else "pkill -TERM -f 'dist/[i]ndex.js --multi-user'" if signal == "TERM"
             else "tmux send-keys -t mcpv:mcp C-c")
     # the window's shell takes the restart only once the old server has ended
     wait = "for i in $(seq 1 100); do pgrep -f 'dist/[i]ndex.js --multi-user' >/dev/null || break; sleep 0.2; done; sleep 1"

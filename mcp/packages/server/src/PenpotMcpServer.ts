@@ -405,6 +405,8 @@ export class PenpotMcpServer {
             : Promise.resolve();
         // first, so the executions in progress answer their requests while the connections are still open
         await this.executorPool?.close();
+        // let those answers go out (the server stopped accepting connections; open ones end on their own)
+        await Promise.race([httpClosed.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 2000))]);
         await this.mcpHandler.close();
         await httpClosed;
         await this.pluginBridge.close();
