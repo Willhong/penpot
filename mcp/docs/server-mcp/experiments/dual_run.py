@@ -15,7 +15,7 @@ saved (03-runtime-contract §6).
 Shapes are matched by name, so scenarios name every shape they create. Ids
 are replaced by names before comparing; maps keyed by other generated ids
 (grid cells) are compared as lists of their entries; numbers are rounded to
-2 decimals.
+2 decimals, also inside path data strings.
 """
 
 import json
@@ -27,6 +27,9 @@ import mcpv
 import observers
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# path data (`content` of paths and booleans): its numbers are rounded like any other number
+PATH_DATA = re.compile(r"^[MLCQZHVAmlcqzhva][-\d\s,.eMLCQZHVAmlcqzhva]*$")
+NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:e-?\d+)?")
 UUID_IN_TEXT = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 INST_IN_TEXT = re.compile(r'#inst "[^"]*"')
 
@@ -40,6 +43,8 @@ def normalize(value, names):
         return round(value, 2)
     if isinstance(value, str) and UUID.match(value):
         return names.get(value, "<id>")
+    if isinstance(value, str) and PATH_DATA.match(value):
+        return NUMBER.sub(lambda m: f"{round(float(m.group(0)), 2):g}", value)
     if isinstance(value, str):
         # ids inside messages (e.g. a refused value echoed in an error)
         return INST_IN_TEXT.sub("#inst <time>", UUID_IN_TEXT.sub(lambda m: names.get(m.group(0), "<id>"), value))

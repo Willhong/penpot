@@ -24,7 +24,7 @@ sys.path.insert(0, str(HERE))
 
 import mcpv  # noqa: E402
 
-# (name, script, takes --space, timeout seconds); order follows PEN-22
+# (name, script, takes --space, timeout seconds); order follows PEN-22, then PEN-9's own
 RUNS = [
     ("e1", "e1_server_write.py", False, 600),
     ("pen3", "pen3_vertical_slice.py", True, 1200),
@@ -44,6 +44,7 @@ RUNS = [
     ("pen19", "pen19_exports.py", True, 1800),
     ("pen20", "pen20_history.py", True, 2400),
     ("pen24", "pen24_follow.py", True, 1200),
+    ("pen9-integrated", "pen9_integrated.py", True, 2400),
 ]
 
 OUT = mcpv.STATE / "pen9" / "regression"

@@ -16,6 +16,7 @@ A member no execution used is "not run", never counted as verified.
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -85,6 +86,166 @@ def traced_members(start, end):
     return members
 
 
+# Symbol.toStringTag of the frontend's API objects (`obj/reify {:name ...}`) -> Plugin API interfaces
+TAGS = {
+    "ActiveUserProxy": ["ActiveUser"], "CommentProxy": ["Comment"], "CommentThreadProxy": ["CommentThread"],
+    "CurrentUserProxy": ["User"], "ExportProxy": ["Export"], "FileProxy": ["File"],
+    "FileVersionProxy": ["FileVersion"], "FillProxy": ["Fill"], "FlagProxy": ["Flags"],
+    "FlexLayoutProxy": ["FlexLayout"], "FlowProxy": ["Flow"], "FontProxy": ["Font"],
+    "FontVariantProxy": ["FontVariant"], "GradientProxy": ["Gradient"], "GridCellProxy": ["LayoutCellProperties"],
+    "GridLayoutProxy": ["GridLayout"], "HistorySubcontext": ["HistoryContext"], "ImageData": ["ImageData"],
+    "InteractionProxy": ["Interaction"], "LayoutChildProxy": ["LayoutChildProperties"],
+    "LibraryColorProxy": ["LibraryColor"], "LibraryComponentProxy": ["LibraryComponent", "LibraryVariantComponent"],
+    "LibraryProxy": ["Library"], "LibraryTypographyProxy": ["LibraryTypography"], "LocalStorageProxy": ["LocalStorage"],
+    "PageProxy": ["Page"], "PenpotContext": ["Penpot"], "PenpotFontsSubcontext": ["FontsContext"],
+    "PenpotLibrarySubcontext": ["LibraryContext"], "PenpotManagementContext": ["PenpotMgmt"],
+    "RulerGuideProxy": ["RulerGuide"], "ShadowProxy": ["Shadow"], "StrokeProxy": ["Stroke"],
+    "TextRange": ["TextRange"], "TokenSetProxy": ["TokenSet"], "TokenThemeProxy": ["TokenTheme"],
+    "TokensCatalog": ["TokenCatalog"], "TrackProxy": ["Track"], "UserProxy": ["User"], "VariantProxy": ["Variants"],
+    "ViewportProxy": ["Viewport"],
+}
+SHAPES = {"rectangle": ["Rectangle"], "ellipse": ["Ellipse"], "board": ["Board", "VariantContainer"],
+          "group": ["Group"], "boolean": ["Boolean"], "bool": ["Boolean"], "path": ["Path"], "text": ["Text"],
+          "image": ["Image"], "svg-raw": ["SvgRaw"], "null": ["ShapeBase"]}
+TOKENS = {"color": "TokenColor", "spacing": "TokenSpacing", "borderRadius": "TokenBorderRadius",
+          "sizing": "TokenSizing", "opacity": "TokenOpacity", "borderWidth": "TokenBorderWidth",
+          "fontSizes": "TokenFontSizes", "dimension": "TokenDimension", "fontFamilies": "TokenFontFamilies",
+          "fontWeights": "TokenFontWeights", "letterSpacing": "TokenLetterSpacing", "number": "TokenNumber",
+          "rotation": "TokenRotation", "textCase": "TokenTextCase", "textDecoration": "TokenTextDecoration",
+          "typography": "TokenTypography", "shadow": "TokenShadow"}
+ROOTS = {"penpot": ["Penpot"], "penpotMgmt": ["PenpotMgmt"]}
+GENERIC = {"Omit", "Pick", "Partial", "Promise", "Array", "Record", "Readonly", "Exclude"}
+
+
+def declarations():
+    """{interface: (parents, {member: type text})} of the Plugin API declarations, and the union types
+    ({name: [members]})."""
+    src = (mcpv.ROOT / "plugins/libs/plugin-types/index.d.ts").read_text()
+    decls = list(re.finditer(r"^export (?:declare )?(interface|type) (\w+)", src, re.M))
+    out, unions = {}, {}
+    for i, m in enumerate(decls):
+        kind, name = m.groups()
+        body = src[m.end():decls[i + 1].start() if i + 1 < len(decls) else len(src)]
+        if kind == "type":
+            head = body.split(";", 1)[0]
+            if "{" not in head.split("=", 1)[-1][:3]:
+                unions[name] = re.findall(r"\b([A-Z]\w+)\b", re.sub(r"'[^']*'", "", head))
+                continue
+        clause = body.split("{", 1)[0]
+        parents = [p for p in re.findall(r"\b([A-Z]\w+)\b", re.sub(r"'[^']*'", "", clause)) if p not in GENERIC]
+        members = {}
+        for mm in re.finditer(r"^ {2}(?:readonly )?(\w+)\??(\([^)]*\))?\s*:\s*([^;\n]+)", body, re.M):
+            members[mm.group(1)] = mm.group(3)
+        out[name] = (parents, members)
+    return out, unions
+
+
+def resolve_type(text, decls, unions):
+    """Interfaces a member's declared type names (arrays, promises, unions and null taken apart)."""
+    names = []
+    for word in re.findall(r"\b([A-Z]\w+)\b", text):
+        if word in decls:
+            names.append(word)
+        elif word in unions:
+            names += [u for u in unions[word] if u in decls]
+    return names
+
+
+def ancestors(name, decls, seen=None):
+    seen = seen if seen is not None else set()
+    if name in seen or name not in decls:
+        return seen
+    seen.add(name)
+    for parent in decls[name][0]:
+        ancestors(parent, decls, seen)
+    return seen
+
+
+def resolve_kind(kind, decls, unions):
+    """[(interface, member prefix)] that a traced kind stands for; [] when unknown."""
+    if kind in ROOTS:
+        return [(i, "") for i in ROOTS[kind]]
+    tag, _, sub = kind.partition(":")
+    if tag == "ShapeProxy" and "." not in kind:
+        return [(i, "") for i in SHAPES.get(sub, [])]
+    if tag == "TokenProxy" and "." not in kind:
+        return [(TOKENS[sub], "")] if sub in TOKENS else [("TokenBase", "")]
+    if kind in TAGS:
+        return [(i, "") for i in TAGS[kind]]
+    # a path: the parent kind's member, through its declared type
+    parent, _, member = kind.rpartition(".")
+    call = member.endswith("()")
+    member = member[:-2] if call else member
+    out = []
+    for interface, prefix in resolve_kind(parent, decls, unions) if parent else []:
+        for owner in ancestors(interface, decls):
+            text = decls[owner][1].get(prefix + member)
+            if text is None:
+                continue
+            if text.strip().startswith("{"):
+                out.append((owner, f"{prefix}{member}."))  # an inline object type: its members are nested names
+            else:
+                if call:
+                    text = text.split("=>")[-1]
+                out += [(t, "") for t in resolve_type(text, decls, unions)]
+    return out
+
+
+def report(_args):
+    os.chdir(mcpv.ROOT)
+    import gen_inventory  # noqa: E402  (reads its inputs relative to the working directory)
+
+    mark = json.loads(MARK.read_text())
+    traced = traced_members(mark["start"], mark["end"])
+    decls, unions = declarations()
+    covered, unknown_kinds = set(), set()
+    for entry in traced:
+        kind, _, member = entry.rpartition(".")
+        targets = resolve_kind(kind, decls, unions)
+        if not targets:
+            unknown_kinds.add(kind)
+        for interface, prefix in targets:
+            for owner in ancestors(interface, decls):
+                covered.add((owner, prefix + member))
+
+    with LOG.open("rb") as log:
+        log.seek(mark["start"])
+        chunk = log.read(mark["end"] - mark["start"]).decode(errors="replace")
+    tools_run = set(re.findall(r"Tool execution #\d+ starting: (\w+)", chunk))
+
+    rows, by_area = [], {}
+    for interface, members in sorted(gen_inventory.parse_api().items()):
+        for name, is_method, readonly in members:
+            area = gen_inventory.area_of(interface, name)
+            kind = gen_inventory.classify(interface, name, is_method, readonly, area)
+            ran = (interface, name) in covered
+            rows.append({"interface": interface, "member": name, "area": area,
+                         "ticket": gen_inventory.AREAS[area][0], "class": kind, "ran": ran})
+            entry = by_area.setdefault(area, {"ticket": gen_inventory.AREAS[area][0], "members": 0, "ran": 0,
+                                              "valueObjects": 0, "valueObjectsRan": 0, "notRun": []})
+            if kind == "data":
+                entry["valueObjects"] += 1
+                entry["valueObjectsRan"] += ran
+            else:
+                entry["members"] += 1
+                entry["ran"] += ran
+                if not ran:
+                    entry["notRun"].append(f"{interface}.{name}")
+    tools = {tool: tool in tools_run for tool, _, _ in gen_inventory.MCP_TOOL_AREA.values()}
+    behaviour = [r for r in rows if r["class"] != "data"]
+    summary = {
+        "members": len(behaviour), "ran": sum(r["ran"] for r in behaviour),
+        "valueObjects": len(rows) - len(behaviour),
+        "valueObjectsRan": sum(r["ran"] for r in rows if r["class"] == "data"),
+        "tools": tools, "unknownKinds": sorted(unknown_kinds), "tracedEntries": len(traced),
+    }
+    out = {"summary": summary, "areas": by_area, "members": rows}
+    (OUT / "coverage.json").write_text(json.dumps(out, indent=2, ensure_ascii=False))
+    print(json.dumps({"summary": summary,
+                      "areas": {a: {k: v for k, v in e.items() if k != "notRun"} | {"notRun": len(e["notRun"])}
+                                for a, e in by_area.items()}}, indent=1, ensure_ascii=False))
+
+
 def run(args):
     OUT.mkdir(parents=True, exist_ok=True)
     restart_mcp(trace=True)
@@ -107,9 +268,12 @@ def main():
     run_parser.add_argument("--space", type=int, required=True)
     run_parser.add_argument("--only", nargs="*")
     sub.add_parser("kinds")
+    sub.add_parser("report")
     args = parser.parse_args()
     if args.command == "run":
         run(args)
+    elif args.command == "report":
+        report(args)
     elif args.command == "kinds":
         mark = json.loads(MARK.read_text())
         kinds = {}
