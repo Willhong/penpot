@@ -144,17 +144,20 @@
            (wrf/with-pending :font ids)))))
 
 (defn- pending-font-faces
+  "Keys of the font faces `ids` need that wasm does not have yet. Requests
+  them (a request in flight is shared), so the wait does not depend on the
+  shapes having been pushed to wasm."
   [ids]
-  (let [objects (dsh/lookup-page-objects @st/state)]
-    (into #{}
-          (comp
-           (map #(get objects %))
-           (keep :content)
-           (mapcat wasm.fonts/get-content-fonts)
-           (map wasm.fonts/make-font-data)
-           (remove wasm.fonts/font-ready?)
-           (map wasm.fonts/font-data-key))
-          ids)))
+  (let [objects (dsh/lookup-page-objects @st/state)
+        missing (into []
+                      (comp
+                       (map #(get objects %))
+                       (keep :content)
+                       (mapcat dwwt/text-fonts)
+                       (remove #(wasm.fonts/font-ready? (wasm.fonts/make-font-data %))))
+                      ids)]
+    (doall (wasm.fonts/store-fonts missing))
+    (into #{} (map (comp wasm.fonts/font-data-key wasm.fonts/make-font-data)) missing)))
 
 (defn- await-font-resize
   "Waits for missing font faces, then resizes `ids`."
@@ -1137,9 +1140,17 @@
                 (if (contains? attrs :font-id)
                   ;; The geometry depends on the font, so wait until wasm has it.
                   (await-font-resize stream auto-ids)
-                  ;; No font change: measurable right away.
-                  (->> (rx/from auto-ids)
-                       (rx/map dwwt/resize-wasm-text)))))
+                  ;; A weight or style change can need a face wasm does not have
+                  ;; yet, as can new glyphs (fallback fonts). Checked once the
+                  ;; update above has committed, so the new content counts.
+                  (->> (rx/of ::await-fonts)
+                       (rx/mapcat
+                        (fn [_]
+                          (let [pending (pending-font-faces auto-ids)]
+                            (if (seq pending)
+                              (await-font-faces stream pending auto-ids)
+                              (->> (rx/from auto-ids)
+                                   (rx/map dwwt/resize-wasm-text))))))))))
 
              ;; The legacy renderer re-measures these in the DOM on its own,
              ;; but font loading starts before that render commits.

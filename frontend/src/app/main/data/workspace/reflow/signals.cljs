@@ -69,15 +69,15 @@
      changed)))
 
 (defn- async-text-reflow?
-  "Whether `shape` enters an asynchronous text geometry pipeline. The HTML
-  renderer measures every changed text; WASM only resizes auto-sized texts.
-  A grow-type transition is included because `shape` is the value before the
-  update and may still be fixed."
-  [state shape changed]
+  "Whether `shape` enters an asynchronous text geometry pipeline once updated
+  to `updated`. The HTML renderer measures every changed text; WASM only
+  resizes texts that are auto-sized after the update. A text that becomes
+  fixed (a resize that sets its height) gets no WASM work, so signalling it
+  would leave a wait that nothing ends."
+  [state shape updated]
   (and (cfh/text-shape? shape)
        (or (not (features/active-feature? state "render-wasm/v1"))
-           (not= :fixed (:grow-type shape))
-           (contains? changed :grow-type))))
+           (not= :fixed (:grow-type (or updated shape))))))
 
 (defn- get-reflow-changes
   [state objects changed-objects ids {:keys [attrs] :as props}]
@@ -110,7 +110,7 @@
     (let [edition (dm/get-in state [:workspace-local :edition])]
       (->> reflow-changes
            (into [] (comp (filter (fn [[shape changed-shape changed]]
-                                    (and (async-text-reflow? state shape changed)
+                                    (and (async-text-reflow? state shape changed-shape)
                                          (text-reflow-changed?
                                           state shape changed-shape changed))))
                           (map (comp :id first))

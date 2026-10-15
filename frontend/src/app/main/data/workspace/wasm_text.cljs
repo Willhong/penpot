@@ -29,6 +29,15 @@
 
 (def debounce-resize-text-time 40)
 
+(defn text-fonts
+  "Fonts the layout of `content` uses: those its text nodes name, and the
+  fallback fonts WASM lays out the glyphs they lack with (Korean, emoji...).
+  Fallback fonts are fetched on demand, so a text measured before they
+  arrive gets a size the next measure changes."
+  [content]
+  (concat (wasm.fonts/get-content-fonts content)
+          (wasm.api/fonts-from-text-content content false)))
+
 (defn get-wasm-text-new-size
   "Computes the new {width, height} for a text shape from WASM text layout.
   For :fixed grow-type, updates WASM content and returns current dimensions (no resize)."
@@ -209,14 +218,16 @@
        (let [page-id (:current-page-id state)
              objects (dsh/lookup-page-objects state page-id)
              content (dm/get-in objects [id :content])
-             fonts   (wasm.fonts/get-content-fonts content)
+             missing (->> (text-fonts content)
+                          (remove #(wasm.fonts/font-ready? (wasm.fonts/make-font-data %))))
 
              fonts-ready?
-             (->> fonts
-                  (every?
-                   (fn [font]
-                     (let [font-data (wasm.fonts/make-font-data font)]
-                       (wasm.fonts/font-ready? font-data)))))
+             (empty? missing)
+
+             ;; Requests what is missing (a request in flight is shared), so the
+             ;; wait does not rely on the shape having been pushed to WASM yet.
+             _ (when-not fonts-ready?
+                 (doall (wasm.fonts/store-fonts missing)))
 
              resize-wasm-stream
              (if fonts-ready?

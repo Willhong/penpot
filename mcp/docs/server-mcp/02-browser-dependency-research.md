@@ -157,7 +157,7 @@ headless로 돌리려고 고친 곳:
 
 함께 발견한 사실:
 - **[사실]** 브라우저의 기본 renderer는 wasm이 아니다. `render-switch` flag가 켜져 있으면 프로필 설정 `:renderer`를 따르고 기본값은 `:svg`(DOM 측정)다(`frontend/src/app/main/features.cljs:35`). 시험 계정 owner·editor는 설정에서 wasm으로 바꿨다. 운영에서 사용자 대부분이 어느 renderer를 쓰는지는 E9에서 확인한다.
-- **[사실]** wasm 모드에서 auto-height 텍스트의 크기를 바꾸면(`resize`) `:text-bridge` 대기 표시가 풀리지 않아 `waitForLayoutUpdate`가 시간 초과된다. 브라우저도 같다(내부 작업 번호까지 같음). 이때 높이도 다시 계산되지 않는다: 4줄인데 20px로 남는다. 서버 계약(§3 '실행이 끝날 때는 파생 값 계산을 끝낸다')을 지키려면 PEN-12에서 고쳐야 한다.
+- **[사실]** wasm 모드에서 auto-height 텍스트의 크기를 바꾸면(`resize`) `:text-bridge` 대기 표시가 풀리지 않아 `waitForLayoutUpdate`가 시간 초과된다. 브라우저도 같다(내부 작업 번호까지 같음). 이때 높이도 다시 계산되지 않는다: 4줄인데 20px로 남는다. 서버 계약(§3 '실행이 끝날 때는 파생 값 계산을 끝낸다')을 지키려면 PEN-12에서 고쳐야 한다. → **PEN-12에서 고쳤다.** 원인: `resize(w, h)`가 높이를 정하면 grow type이 `fixed`로 바뀌어(UI와 같은 `next-grow-type` 규칙) 높이는 맞게 그대로 남는데, 대기 표시는 바뀌기 전 grow type으로 판단해 걸고 있었다(`05-results.md` PEN-12).
 
 ## 5. 미확인 항목과 다음 실험
 
