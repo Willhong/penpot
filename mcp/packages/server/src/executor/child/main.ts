@@ -96,3 +96,10 @@ process.on("message", (request: ExecutorRequest) => {
 
 // the parent going away ends the session
 process.on("disconnect", () => process.exit(0));
+
+// An error the workspace code throws outside an execution's promise chain (an observable subscriber, a
+// timer) is reported and left behind, as the browser's console does; it does not end the session.
+process.on("uncaughtException", (error) => console.error("[executor] uncaught error:", error?.stack ?? error));
+process.on("unhandledRejection", (reason) =>
+    console.error("[executor] unhandled rejection:", (reason as Error)?.stack ?? reason)
+);

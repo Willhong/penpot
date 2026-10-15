@@ -661,8 +661,12 @@
               (rx/map sync-unload-guard)
               (rx/take-until stoper-s))
 
+         ;; Only while something is still buffered: a save forced within
+         ;; the debounce (`::force-persist`) has already flushed and saved
+         ;; it, and a late `:pending` would never settle.
          (->> local-commits-s
               (rx/debounce 200)
+              (rx/filter (fn [_] @buffered?))
               (rx/map (fn [_]
                         (update-status :pending)))
               (rx/take-until stoper-s))

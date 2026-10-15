@@ -18,6 +18,7 @@
 | [02-browser-dependency-research.md](02-browser-dependency-research.md) | PEN-7 | 기능별 브라우저 의존성, 서버 경로 대안, 실험 E1–E3 | 완료, 미확인 E4–E11 목록 |
 | [03-runtime-contract.md](03-runtime-contract.md) | PEN-8 | 실행 격리, 완료 단계, 계산·출력 계약, 동등성 기준, 오류 코드 | 기술 계약 확정, E4 실증, blocker E5–E7·E10, D10·D12·D13 확정 |
 | [04-executor.md](04-executor.md) | PEN-10 | 서버 실행기 구성 요소와 interface, 실행 순서, 세션, 측정값 | interface 확정, PEN-3 연결 |
+| [05-results.md](05-results.md) | PEN-22 | 티켓별 실제 MCP 시험 결과 | PEN-3, PEN-4 |
 
 ## 도구
 
@@ -27,7 +28,8 @@
 - `experiments/e4_headless_compute.py`: 같은 Plugin API 코드를 브라우저(wasm 모드)와 headless 실행기에서 실행해 저장 결과를 비교한다.
 - `experiments/observe_write.sh` + `browser_observe.js`: 서버 저장이 관찰 브라우저 두 개에 나타나기까지의 시간을 잰다.
 - `experiments/pen3_vertical_slice.py`: 실제 MCP 호출(서버 실행)로 사각형을 저장하고, 브라우저가 열렸을 때·닫혔을 때·새로고침 뒤, 거부 요청 무변경을 확인한다.
-- `experiments/mcp_client.py`: 실험용 MCP 클라이언트.
+- `experiments/pen4_files_pages.py`: 프로젝트·파일·페이지·메타데이터·버전을 브라우저 없이 시험하고 브라우저 결과와 비교한다.
+- `experiments/mcp_client.py`, `observers.py`: 실험용 MCP 클라이언트, 관찰 브라우저 조작.
 - 검증 스택: 저장소 루트의 `scripts/mcp-verify-env`.
 
 ## 다음 구현 작업(PEN-22)이 시작할 때

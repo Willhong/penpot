@@ -103,7 +103,8 @@
 
 (defn bootstrap!
   "Loads the profile and starts the store the way `app.main` does, minus the
-  UI. Resolves to the profile."
+  UI, then initializes the profile's default team as the dashboard would.
+  Resolves to the profile."
   []
   (p/let [profile (cmd! :get-profile {})]
     (when (= uuid/zero (:id profile))
@@ -120,7 +121,11 @@
               #(assoc-in % [:profile :props :renderer] :wasm)
               (rt/initialize-router routes)
               (dps/initialize-persistence))
-    profile))
+    ;; The browser lands on the default team's dashboard: `penpotMgmt` calls
+    ;; made before opening a file need that team and its features.
+    (p/do (emit-and-wait! ::dtm/team-initialized
+                          (dtm/initialize-team (:default-team-id profile)))
+          profile)))
 
 ;; --- WORKSPACE
 
@@ -134,7 +139,10 @@
   Resolves once the page `page-id` (or the file's first page) is initialized
   and its shapes are in the engine."
   [team-id file-id page-id]
-  (p/let [prev-file (current-file-id)
+  (p/let [;; fails fast, as the workspace page does, when the user may not
+          ;; read the file (the backend answers 404 to both)
+          _         (cmd! :get-file-summary {:id file-id})
+          prev-file (current-file-id)
           _         (when (some? prev-file)
                       (st/emit! ::dps/force-persist
                                 (dw/finalize-workspace (current-team-id) prev-file)))

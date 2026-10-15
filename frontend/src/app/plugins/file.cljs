@@ -116,8 +116,11 @@
                (->> (rx/zip (rp/cmd! :get-team-users {:file-id file-id})
                             (rp/cmd! :update-file-snapshot params))
                     (rx/subs!
-                     (fn [[users data]]
+                     ;; The second value is the RPC's answer, not the version:
+                     ;; the pinned version is this one with its new label.
+                     (fn [[users _]]
                        (let [users (d/index-by :id users)]
+                         (swap! data assoc :label (:label params) :created-by "user")
                          (st/emit! (se/event plugin-id "pin-version" :file-id file-id))
                          (resolve (file-version-proxy plugin-id file-id users @data))))
                      reject))))))))))

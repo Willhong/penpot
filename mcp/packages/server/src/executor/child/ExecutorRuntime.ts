@@ -140,6 +140,10 @@ export class ExecutorRuntime {
         if (error instanceof ExecutorError) {
             return error;
         }
+        const code = (error as { code?: unknown })?.code;
+        if (typeof code === "string" && code !== "engine-error" && ExecutorRuntime.WORKSPACE_CODES.has(code)) {
+            return new ExecutorError(code as any, (error as Error).message);
+        }
         const status = this.engine.status();
         if (status.fileId && !status.canEdit) {
             // the plugin API fails in its own way on a read-only workspace; the contract answers like the
@@ -148,10 +152,6 @@ export class ExecutorRuntime {
                 "not-found",
                 `this user has read-only access to file ${status.fileId}; the code failed with: ${error instanceof Error ? error.message : String(error)}`
             );
-        }
-        const code = (error as { code?: unknown })?.code;
-        if (typeof code === "string" && code !== "engine-error" && ExecutorRuntime.WORKSPACE_CODES.has(code)) {
-            return new ExecutorError(code as any, (error as Error).message);
         }
         const message = error instanceof Error ? error.message : String(error);
         return new ExecutorError("execution-error", message);

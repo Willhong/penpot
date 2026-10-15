@@ -25,6 +25,7 @@
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.persistence :as dps]
+   [app.main.data.workspace.pages :as dwpg]
    [app.main.store :as st]
    [app.plugins.api :as plugins.api]
    [app.plugins.register :as preg]
@@ -40,9 +41,15 @@
 
 (defn- current-file-id [] (:workspace-ready @st/state))
 
+;; Revn of each file after the executor's last save. `update-file` answers
+;; with the revn the file had before the change and the store keeps that
+;; value, so the store lags one behind the executor's own saves.
+(defonce ^:private saved-revn (atom {}))
+
 (defn- file-revn
   [file-id]
-  (:revn (dsh/lookup-file @st/state file-id)))
+  (max (or (:revn (dsh/lookup-file @st/state file-id)) 0)
+       (get @saved-revn file-id 0)))
 
 (defn- contract-error
   "Turns a failure of the workspace code into a JS error carrying the error
@@ -130,13 +137,26 @@
                                         into (mapcat change-ids) redo-changes))))
         saves   (->> st/stream
                      (rx/filter (ptk/type? ::dps/commit-persisted))
-                     (rx/subs! (fn [_] (swap! execution update :saves inc))))]
+                     (rx/subs! (fn [_] (swap! execution update :saves inc))))
+        ;; The workspace drops edits on a read-only file without a word
+        ;; (`dch/commit-changes`); the executor reports them instead.
+        refused (->> st/stream
+                     (rx/filter (ptk/type? ::dch/commit-changes))
+                     (rx/filter (fn [_] (not (get-in @st/state [:permissions :can-edit]))))
+                     (rx/subs! (fn [_] (swap! execution update :refused inc))))
+        ;; A version restore reloads the file; the execution ends after it.
+        reload  (->> st/stream
+                     (rx/filter (ptk/type? :app.main.data.workspace.versions/restore-version-from-plugins))
+                     (rx/subs! (fn [_]
+                                 (swap! execution assoc :reloading
+                                        (session/wait-event ::dwpg/initialized)))))]
     (reset! dps/autosave-held? true)
     (reset! execution {:file-id file-id
                        :revn-before (some-> file-id file-revn)
                        :changed #{}
                        :saves 0
-                       :subs [sub saves]})
+                       :refused 0
+                       :subs [sub saves refused reload]})
     nil))
 
 (defn- end-execution!
@@ -154,17 +174,23 @@
   the commit report of 03-runtime-contract §3."
   [^js opts]
   (let [settle-timeout (or (some-> opts .-settleTimeout) 10000)]
-    (-> (p/let [pending   (session/settle! settle-timeout)
+    (-> (p/let [_         (when-let [reloading (:reloading @execution)]
+                            (p/race [reloading (p/delay settle-timeout)]))
+                _         (when (pos? (:refused @execution))
+                            (throw (ex-info "this user has read-only access to the file; its edits were not applied"
+                                            {:type :not-found :code :object-not-found})))
+                pending   (session/settle! settle-timeout)
                 _         (session/flush!)
                 state     (end-execution!)
                 file-id   (or (current-file-id) (:file-id state))
-                ;; `update-file` answers with the revn the file had before
-                ;; the change and the store keeps that value, so the saved
-                ;; revn is one more.
+                ;; the revn the last `update-file` answered: the file's revn
+                ;; before that change, so the saved revn is one more
                 answered  (some-> file-id file-revn)
                 before    (:revn-before state)
                 saves     (:saves state)
                 revn      (if (pos? saves) (inc answered) answered)
+                _         (when (and file-id (pos? saves))
+                            (swap! saved-revn assoc file-id revn))
                 changed   (disj (:changed state) uuid/zero)]
           #js {:saved (pos? saves)
                :fileId (some-> file-id str)
