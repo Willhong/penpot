@@ -1225,7 +1225,13 @@
       (let [team-id (:current-team-id @st/state)]
         (js/Promise.
          (fn [resolve reject]
-           (let [current-libs (into #{} (map first) (get @st/state :files))]
+           ;; The current file and the libraries loaded for it. Files opened
+           ;; before in the session stay in state without their data and are
+           ;; still available to link.
+           (let [current-libs (into #{}
+                                    (comp (filter (fn [[_ file]] (some? (:data file))))
+                                          (map first))
+                                    (get @st/state :files))]
              (->> (rp/cmd! :get-team-shared-files {:team-id team-id})
                   (rx/map (fn [result]
                             (->> result
@@ -1267,6 +1273,16 @@
                          (->> st/stream
                               (rx/filter (ptk/type? ::dwl/link-file-to-library-finished))
                               (rx/take 1)
+                              ;; The library's content is fetched after the link
+                              ;; finishes: resolve once it is in, so the library's
+                              ;; components can be read right away.
+                              (rx/mapcat
+                               (fn [_]
+                                 (->> st/stream
+                                      (rx/filter (ptk/type? ::dwl/libraries-fetched))
+                                      (rx/filter #(some? (dm/get-in @st/state [:files library-id :data])))
+                                      (rx/take 1)
+                                      (rx/timeout 30000 (rx/of :timeout)))))
                               (rx/subs! #(resolve (library-proxy plugin-id library-id)) reject))
                          (st/emit! (-> (dwl/link-file-to-library file-id library-id)
                                        (se/add-event plugin-id))))))

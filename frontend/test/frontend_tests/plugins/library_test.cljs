@@ -234,15 +234,39 @@
    #js [(.then p (fn [v] {:resolved v}) (fn [e] {:rejected e}))
         (js/Promise. (fn [resolve] (js/setTimeout #(resolve {:timeout true}) 2000)))]))
 
+(t/deftest ^:async available-libraries-lists-files-opened-before
+  ;; Regression: every file the session had opened stayed in state without its
+  ;; data and was left out, as if it were linked already.
+  (let [file-id   (uuid/next)
+        linked-id (uuid/next)
+        opened-id (uuid/next)
+        other-id  (uuid/next)]
+    (await
+     (mock/with-mocks*
+       {st/state           (atom {:current-file-id file-id
+                                  :current-team-id (uuid/next)
+                                  :files {file-id {:id file-id :data {}}
+                                          linked-id {:id linked-id :data {}}
+                                          opened-id {:id opened-id}}})
+        rp/cmd!            (shared-files-cmd [{:id linked-id :name "Linked"}
+                                              {:id opened-id :name "Opened before"}
+                                              {:id other-id :name "Other"}])
+        r/check-permission (mock/stub (constantly true))}
+       (let [context              (library/library-subcontext plugin-id)
+             {:keys [resolved]}   (await (settled (.availableLibraries context)))]
+         (t/is (= #{"Opened before" "Other"}
+                  (into #{} (map #(obj/get % "name")) resolved))))))))
+
 (t/deftest ^:async connect-library-links-a-published-library
   (let [file-id    (uuid/next)
         team-id    (uuid/next)
         library-id (uuid/next)
         stream     (rx/subject)
-        events     (atom [])]
+        events     (atom [])
+        state      (atom {:current-file-id file-id :current-team-id team-id})]
     (await
      (mock/with-mocks*
-       {st/state           (atom {:current-file-id file-id :current-team-id team-id})
+       {st/state           state
         st/stream          stream
         st/emit!           (mock/stub (fn [& emitted] (swap! events into emitted)))
         rp/cmd!            (shared-files-cmd [{:id library-id :name "Published"}])
@@ -252,6 +276,13 @@
              link?   #(= ::dwl/link-file-to-library (ptk/type %))]
          (await (async/wait-for #(some link? @events) "link event emitted"))
          (rx/push! stream (ptk/data-event ::dwl/link-file-to-library-finished))
+         ;; Regression: it resolved here, before the library's content was
+         ;; fetched, so the library proxy listed no components yet.
+         (t/is (:timeout (await (js/Promise.race
+                                 #js [(.then result (constantly {}))
+                                      (js/Promise. (fn [r] (js/setTimeout #(r {:timeout true}) 50)))]))))
+         (swap! state assoc-in [:files library-id :data] {:components {}})
+         (rx/push! stream (ptk/data-event ::dwl/libraries-fetched))
          (let [{:keys [resolved]} (await result)
                link-data          (ev/-data (first (filter link? @events)))]
            (t/is (= library-id (obj/get resolved "$id")))

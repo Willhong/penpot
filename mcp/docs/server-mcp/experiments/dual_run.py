@@ -53,19 +53,49 @@ def normalize(value, names):
     return value
 
 
+def shape_keys(objects):
+    """{id: key} naming each shape by its path from the page root, `parent/child`, with `[n]` for the
+    n-th sibling of the same name (n > 0), so copies of a component that repeat names stay apart."""
+    keys = {}
+
+    def key_of(shape_id):
+        if shape_id in keys:
+            return keys[shape_id]
+        shape = objects[shape_id]
+        parent_id = shape.get("parentId")
+        if parent_id is None or parent_id == shape_id or parent_id not in objects:
+            keys[shape_id] = shape["name"]
+            return keys[shape_id]
+        parent = objects[parent_id]
+        same = [s for s in parent.get("shapes", []) if s in objects and objects[s]["name"] == shape["name"]]
+        index = same.index(shape_id) if shape_id in same else 0
+        prefix = "" if parent.get("parentId") == parent_id else key_of(parent_id) + "/"
+        keys[shape_id] = prefix + shape["name"] + (f"[{index}]" if index else "")
+        return keys[shape_id]
+
+    for shape_id in objects:
+        key_of(shape_id)
+    return keys
+
+
 def saved_shapes(file_id):
-    """{name: normalized shape} of every page of a file, as the backend has it."""
+    """{page/key: normalized shape} of every page of a file, as the backend has it (see `shape_keys`)."""
     data = mcpv.rpc_ok("get-file", {"id": file_id}, mcpv.token("editor"))["data"]
     shapes, names = {}, {}
     for page_id in data["pages"]:
         page = data["pagesIndex"][page_id]
         names[page_id] = "page:" + page["name"]
-        for shape_id, shape in page["objects"].items():
-            names[shape_id] = shape["name"]
+        names.update(shape_keys(page["objects"]))
     for page_id in data["pages"]:
-        for shape in data["pagesIndex"][page_id]["objects"].values():
-            shapes[f'{names[page_id]}/{shape["name"]}'] = normalize(shape, names)
+        for shape_id, shape in data["pagesIndex"][page_id]["objects"].items():
+            shapes[f'{names[page_id]}/{names[shape_id]}'] = normalize(shape, names)
     return shapes
+
+
+def page_shape_names(file_id):
+    """Sorted names of the shapes of the file's first page, repeated names included."""
+    data = mcpv.rpc_ok("get-file", {"id": file_id}, mcpv.token("editor"))["data"]
+    return sorted(shape["name"] for shape in data["pagesIndex"][data["pages"][0]]["objects"].values())
 
 
 def diff(a, b, path=""):
@@ -131,7 +161,7 @@ class DualRun:
             saved_ok = not missing and not shape_diff
 
             # the observer tab got the server's result without a reload, and keeps it after one
-            expected = sorted(key.split("/", 1)[1] for key in server_shapes if key.startswith(self.current_page(server_file)))
+            expected = page_shape_names(server_file)
             live, live_s = wait_until(lambda: self.observer.shape_names("p1") == expected, timeout=10)
             reloaded = self.observer.shape_names("p1", reload=True) == expected
             report["observer"] = {"liveWithoutReload": bool(live), "seconds": live_s, "afterReload": reloaded}
@@ -151,11 +181,6 @@ class DualRun:
                 break
             time.sleep(0.5)
         return last
-
-    @staticmethod
-    def current_page(file_id):
-        data = mcpv.rpc_ok("get-file", {"id": file_id}, mcpv.token("editor"))["data"]
-        return "page:" + data["pagesIndex"][data["pages"][0]]["name"]
 
 
 def wait_until(predicate, timeout=5.0):

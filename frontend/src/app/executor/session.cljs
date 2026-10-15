@@ -153,8 +153,13 @@
           _         (when (not= team-id (current-team-id))
                       (emit-and-wait! ::dtm/team-initialized
                                       (dtm/initialize-team team-id)))
+          ;; the libraries' content arrives after the workspace is initialized;
+          ;; wait for it too, so the code finds their components and colors
+          ;; (in a vector, so `p/let` subscribes now and awaits it below)
+          libraries [(wait-event ::dw/all-libraries-resolved)]
           _         (emit-and-wait! ::dw/workspace-initialized
                                     (dw/initialize-workspace team-id file-id))
+          _         (first libraries)
           page-id   (or page-id
                         (-> (dsh/lookup-file-data @st/state file-id) :pages first))]
     ;; The page's shapes are loaded when `::dwpg/initialized` arrives (see
