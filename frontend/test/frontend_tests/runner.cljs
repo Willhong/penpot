@@ -142,6 +142,7 @@
    [frontend-tests.ui.stroke-menu-test]
    [frontend-tests.ui.text-attrs-multiple-test]
    [frontend-tests.ui.workspace-libraries-test]
+   [frontend-tests.util-avatars-test]
    [frontend-tests.util-clipboard-test]
    [frontend-tests.util-object-test]
    [frontend-tests.util-queue-test]
@@ -305,6 +306,7 @@
    'frontend-tests.ui.stroke-menu-test
    'frontend-tests.ui.text-attrs-multiple-test
    'frontend-tests.ui.workspace-libraries-test
+   'frontend-tests.util-avatars-test
    'frontend-tests.util-clipboard-test
    'frontend-tests.util-object-test
    'frontend-tests.util-queue-test
