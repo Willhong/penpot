@@ -71,13 +71,16 @@
         state {:current-page-id own-session
                :profile {:theme "light"}
                :workspace-local {:zoom 2 :vbox vbox}}
-        sent  {:page-id own-session :zoom 2 :vbox vbox :theme "light"}]
+        sent  {:page-id own-session :zoom 2 :vbox vbox :theme "light" :ai-follow false}]
     (t/testing "a new viewport is sent and recorded"
       (t/is (= {:types [:app.main.data.websocket/send-message] :last-sent sent}
                (viewport-sends state nil false))))
     (t/testing "the same viewport is not sent again, unless forced (a session joined)"
       (t/is (= [] (:types (viewport-sends state sent false))))
       (t/is (= [:app.main.data.websocket/send-message] (:types (viewport-sends state sent true)))))
+    (t/testing "turning AI follow on is sent: the user's executor learns the tab follows (PEN-24)"
+      (t/is (= [:app.main.data.websocket/send-message]
+               (:types (viewport-sends (assoc state :workspace-ai-follow true) sent false)))))
     (t/testing "a session without a screen sends nothing"
       (t/is (= [] (:types (viewport-sends (update state :workspace-local dissoc :vbox) nil true)))))))
 

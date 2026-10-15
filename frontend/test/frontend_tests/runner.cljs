@@ -4,6 +4,7 @@
    [cljs.test :as t]
    [clojure.string :as str]
    [clojure.tools.cli :refer [parse-opts]]
+   [frontend-tests.ai-follow-test]
    [frontend-tests.basic-shapes-test]
    [frontend-tests.browser-history-test]
    [frontend-tests.code-gen-style-test]
@@ -166,7 +167,8 @@
     (.exit js/process 1)))
 
 (def test-namespaces
-  ['frontend-tests.basic-shapes-test
+  ['frontend-tests.ai-follow-test
+   'frontend-tests.basic-shapes-test
    'frontend-tests.code-gen-style-test
    'frontend-tests.composable-tests.comp.sync-test
    'frontend-tests.copy-as-svg-test

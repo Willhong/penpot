@@ -184,7 +184,8 @@
                          finishExecution  app.executor.api/finishExecution
                          abortExecution   app.executor.api/abortExecution
                          applyHistory     app.executor.api/applyHistory
-                         historyStatus    app.executor.api/historyStatus}
+                         historyStatus    app.executor.api/historyStatus
+                         follow           app.executor.api/follow}
                ;; `app.config` reads its settings from globals at load time,
                ;; as the browser's config.js provides them.
                :prepend-js ";globalThis.penpotPublicURI ??= process.env.PENPOT_PUBLIC_URI; globalThis.penpotFlags ??= process.env.PENPOT_FLAGS ?? ''; globalThis.penpotVersion ??= process.env.PENPOT_VERSION;"}}

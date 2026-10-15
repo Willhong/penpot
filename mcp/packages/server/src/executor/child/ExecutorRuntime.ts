@@ -76,6 +76,7 @@ export class ExecutorRuntime {
         this.api = createServerPluginApi(
             createServerContext(this.engine.context(), {
                 observe: () => this.engine.observedScreen(),
+                follow: (action) => this.engine.follow(action),
                 viewerUrl: () => {
                     const query = this.engine.viewerQuery();
                     return query ? `${this.config.uiUri.replace(/\/+$/, "")}/${query}` : null;
@@ -187,6 +188,8 @@ export class ExecutorRuntime {
             await this.engine.abortExecution().catch(() => undefined);
             throw this.executionError(error);
         }
+        const follow = commit.follow ?? undefined;
+        delete commit.follow;
         if (params.history) {
             // what is left to undo and redo, for the client to tell the user
             const left = this.engine.historyStatus();
@@ -196,6 +199,7 @@ export class ExecutorRuntime {
             result: ExecutorRuntime.toJson(result),
             log: console.getLog(),
             commit: commit.saved || commit.changedShapeIds.length > 0 ? commit : null,
+            ...(follow ? { follow } : {}),
             engine: { frontendVersion: this.engine.status().frontendVersion, renderWasm: null },
         };
     }

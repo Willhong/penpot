@@ -4226,6 +4226,18 @@ msgstr "사이트맵"
 msgid "webhooks.last-delivery.success"
 msgstr "마지막 전송이 성공했습니다."
 
+#: src/app/main/data/workspace/ai_follow.cljs
+msgid "workspace.ai-follow.off"
+msgstr "이 탭이 더 이상 AI를 따라가지 않습니다"
+
+#: src/app/main/data/workspace/ai_follow.cljs
+msgid "workspace.ai-follow.off-moved"
+msgstr "화면을 직접 움직여 AI 따라가기를 껐습니다. MCP 메뉴에서 다시 켤 수 있습니다."
+
+#: src/app/main/data/workspace/ai_follow.cljs
+msgid "workspace.ai-follow.on"
+msgstr "이 탭이 이 파일에서 AI가 작업하는 곳을 따라갑니다"
+
 #: src/app/main/ui/workspace/sidebar/options/menus/align.cljs:71
 msgid "workspace.align.hcenter"
 msgstr "가로 가운데 정렬 (%s)"
@@ -4566,6 +4578,14 @@ msgstr "눈금자 숨기기"
 #: src/app/main/ui/workspace/main_menu.cljs:452
 msgid "workspace.header.menu.hide-textpalette"
 msgstr "글꼴 팔레트 숨기기"
+
+#: src/app/main/ui/workspace/main_menu.cljs
+msgid "workspace.header.menu.mcp.ai-follow.off"
+msgstr "AI 따라가기 끄기"
+
+#: src/app/main/ui/workspace/main_menu.cljs
+msgid "workspace.header.menu.mcp.ai-follow.on"
+msgstr "이 탭에서 AI 따라가기"
 
 #: src/app/main/ui/workspace/main_menu.cljs:1038
 msgid "workspace.header.menu.option.edit"

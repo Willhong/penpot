@@ -310,3 +310,23 @@ AI는 editor의 MCP 호출, 사람은 owner 탭(파일을 연 브라우저)이�
 - 결과를 모르는 요청(PEN-6에서 거부만 하던 것): 실행기는 저장 전에 저장 단서(파일, 저장 전 revn, 실행기 세션)를 MCP server에 알리고 기록되기를 기다린다. 재시작 뒤 같은 `requestId`나 `request_status`는 backend 기록으로 저장 여부를 알아낸다(04 §3).
 - 브라우저의 실행 취소는 원래 다른 세션의 변경을 넣지 않는다(`:save-undo? false`로 들어옴). 시험으로 확인만 했다.
 
+## PEN-24 AI 따라가기 (2026-10-15, `experiments/pen24_follow.py`)
+
+탭: p2 = editor(따라가기 켬), p3 = editor(끔), p1 = owner(다른 사용자). AI는 editor의 MCP 호출이다.
+
+| 확인 | 결과 |
+|---|---|
+| 켠 탭이 없을 때 `viewport.zoom = 2` | `ui-only`(메시지에 켜는 메뉴 안내). `openPage`는 세션 페이지만 바꾸고 `follow.tabs` 0, 어떤 탭도 움직이지 않음 |
+| 켠 탭에서 `openPage`, `selection`, `viewport.zoom`·`center`, `zoomIntoView`, `zoomReset`, `zoomToFitAll`(각 2회) | 모두 p2 화면에 반영, `follow.tabs` 1. 요청부터 반영까지 8–22 ms(응답보다 먼저 반영, D7 p95 1초 충족). p3·p1은 페이지·확대·위치·선택 그대로 |
+| p2가 A 페이지일 때 AI가 `pageId`로 B를 열고 도형을 바꿈 | p2가 B로 옮겨 바뀐 도형을 선택(0.04초, `follow.actions`에 `show-changes`). 이미 B에 있으면 화면 그대로 |
+| AI가 다른 파일에서 선택·확대 | p2 그대로, 확대는 `ui-only` |
+| 사용자가 p2 캔버스를 스크롤 | 따라가기 꺼짐, 알림 "화면을 직접 움직여 AI 따라가기를 껐습니다. MCP 메뉴에서 다시 켤 수 있습니다." 다음 AI 확대는 `ui-only` |
+| 편집 화면 메뉴 MCP › "이 탭에서 AI 따라가기" / "AI 따라가기 끄기" | 실제 클릭으로 켜고 끔 |
+
+화면: [따라가기 켠 탭(왼쪽, AI가 연 B 페이지의 도형을 확대·선택)과 끈 탭(오른쪽, A 페이지 그대로)](../../../.mcp-verify/shots/pen24-follow-compare.png)
+
+구현:
+- 탭: `app.main.data.workspace.ai-follow`. 켜면 presence 메시지(`:pointer-update`)에 `:ai-follow`를 실어 보낸다. 받은 신호는 그 파일·그 탭이 켰을 때만 적용하고, 다른 페이지 신호면 먼저 그 페이지로 간다. 적용 중이 아닐 때 페이지 이동·확대·스크롤·선택 이벤트가 오면 끄고 알린다(D16).
+- 실행기: 화면 신호를 backend의 기존 `:broadcast`로 보낸다(같은 사용자의 세션에만 전달, backend 변경 없음). presence로 켠 탭 수를 세어 0이면 화면 조작을 `ui-only`로 답한다. 저장 뒤 바뀐 도형의 페이지를 보낸다. 결과에 `follow: {tabs, actions}`.
+- 번역: 영어·한국어 문구 추가.
+

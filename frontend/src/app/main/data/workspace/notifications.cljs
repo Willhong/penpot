@@ -20,6 +20,7 @@
    [app.main.data.plugins :as dpl]
    [app.main.data.websocket :as dws]
    [app.main.data.workspace :as-alias dw]
+   [app.main.data.workspace.ai-follow :as ai-follow]
    [app.main.data.workspace.common :as dwc]
    [app.main.data.workspace.edition :as dwe]
    [app.main.data.workspace.layout :as dwly]
@@ -166,6 +167,8 @@
     :presence                (handle-presence msg)
     :disconnect              (handle-presence msg)
     :pointer-update          (handle-pointer-update msg)
+    ;; a followed call of this user's server-side MCP session (PEN-24)
+    :broadcast               (when (= :ai-follow (:kind msg)) (ai-follow/handle-message msg))
     :file-change             (handle-file-change msg)
     :comment-change          (dcmt/refresh-comment-threads (:file-id msg) (:thread-id msg))
     :file-deleted            (handle-file-deleted msg)
@@ -190,11 +193,13 @@
      :vport (:vport local)
      :theme (theme/resolve-theme (dm/get-in state [:profile :theme])
                                  (theme/get-system-theme))
+     ;; whether this tab follows the user's server-side MCP sessions (PEN-24)
+     :ai-follow (ai-follow/following? state)
      :position point}))
 
 (defn- viewport-of
   [message]
-  (select-keys message [:page-id :zoom :vbox :theme]))
+  (select-keys message [:page-id :zoom :vbox :theme :ai-follow]))
 
 (defn- handle-pointer-send
   [file-id point last-sent]
@@ -280,7 +285,7 @@
 
 
 (defn handle-pointer-update
-  [{:keys [page-id session-id position zoom zoom-inverse vbox vport theme] :as msg}]
+  [{:keys [page-id session-id position zoom zoom-inverse vbox vport theme ai-follow] :as msg}]
   (ptk/reify ::handle-pointer-update
     ptk/UpdateEvent
     (update [_ state]
@@ -292,6 +297,7 @@
                           :vbox vbox
                           :vport vport
                           :theme theme
+                          :ai-follow (true? ai-follow)
                           :point position
                           :updated-at (ct/now)
                           :page-id page-id))))))

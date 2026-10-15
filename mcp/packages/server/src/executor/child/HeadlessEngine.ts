@@ -40,7 +40,20 @@ interface ExecutorBundle {
     abortExecution(): Promise<void>;
     applyHistory(direction: "undo" | "redo"): Promise<number>;
     historyStatus(): { undo: number; redo: number };
+    follow(action: FollowAction): number;
 }
+
+/**
+ * A call to show on the user's tabs with "AI follow" on (PEN-24).
+ */
+export type FollowAction =
+    | { action: "page" }
+    | { action: "select"; ids: string[] }
+    | { action: "center"; x: number; y: number }
+    | { action: "zoom"; zoom: number }
+    | { action: "zoom-reset" }
+    | { action: "zoom-fit-all" }
+    | { action: "zoom-into-view"; ids: string[] };
 
 /**
  * The headless Penpot workspace of one executor process: the frontend's store, workspace events and plugin
@@ -150,5 +163,12 @@ export class HeadlessEngine {
      */
     historyStatus(): { undo: number; redo: number } {
         return this.bundle.historyStatus();
+    }
+
+    /**
+     * Shows a call on the user's tabs with "AI follow" on, on the open file. Returns how many tabs follow.
+     */
+    follow(action: FollowAction): number {
+        return this.bundle.follow(action);
     }
 }

@@ -12,7 +12,7 @@
 
 | 문서 | Plane | 내용 | 상태 |
 |---|---|---|---|
-| [01-feature-contract.md](01-feature-contract.md) | PEN-1 | 기능 범위, 인증, 대상 지정, 저장·충돌·중복·취소, UI 전용 API | 범위 확정, D1–D9·D11 확정 |
+| [01-feature-contract.md](01-feature-contract.md) | PEN-1 | 기능 범위, 인증, 대상 지정, 저장·충돌·중복·취소, UI 전용 API | 범위 확정, D1–D9·D11·D16 확정 |
 | [feature-inventory.md](feature-inventory.md) | PEN-1 | member·도구별 담당 티켓과 검증 시나리오 (생성 파일) | 미매핑 0 |
 | [verification-env.md](verification-env.md) | PEN-2 | 운영과 분리한 검증 스택 사용법 | 완료 |
 | [02-browser-dependency-research.md](02-browser-dependency-research.md) | PEN-7 | 기능별 브라우저 의존성, 서버 경로 대안, 실험 E1–E3 | 완료, 미확인 E4–E11 목록 |

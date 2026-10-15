@@ -18,7 +18,10 @@ Where this section differs from the rest of the overview, this section applies.
 * `penpot.viewport` and `penpot.theme` read the screen of a browser tab where the same user has the file open.
   With no such tab, reading the viewport fails with `ui-only` and `theme` is "light".
   Moving the screen (setting `viewport.center` or `viewport.zoom`, `zoomReset`, `zoomToFitAll`, `zoomIntoView`) needs a
-  tab with "AI follow" on; without one it fails with `ui-only`.
+  tab of the user on this file with "AI follow" on (the user turns it on in the editor's MCP menu); without one it fails
+  with `ui-only`. Such a tab also follows `openPage(page)` and `selection`, and goes to the page of the shapes a call
+  changed when it shows another page. The response's `follow` says how many tabs followed. The tab stops following
+  when the user moves the screen; do not keep moving it.
 * `penpot.ui`, `penpot.closePlugin()`, `penpot.openViewer()` and `penpot.openPage(page, true)` fail with `ui-only`:
   there is no plugin window and no browser to navigate. `penpot.openPage(page)` changes the session's current page.
 * Listeners added with `penpot.on` stay until the session ends. They hear this session's changes and the changes others

@@ -1,7 +1,7 @@
 """
 Observer browser tabs of the mcp-verify stack, driven through ego-browser:
-p1 = owner at http://localhost:3550, p2 = editor at http://127.0.0.1:3550
-(see verification-env.md). The tabs only read; writes come from MCP.
+p1 = owner at http://localhost:3550, p2 = editor at http://127.0.0.1:3550,
+p3 = a second editor tab (see verification-env.md). The tabs only read; writes come from MCP.
 
     import observers
     tabs = observers.Tabs(space=2)
@@ -17,7 +17,7 @@ from pathlib import Path
 import mcpv
 
 HERE = Path(__file__).resolve().parent
-HOSTS = {"p1": "localhost", "p2": "127.0.0.1"}
+HOSTS = {"p1": "localhost", "p2": "127.0.0.1", "p3": "127.0.0.1"}
 
 READY = """() => { try { const s = cljs.core.deref(app.main.store.state);
   return cljs.core.get(s, cljs.core.keyword("workspace-ready")) != null

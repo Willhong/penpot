@@ -41,11 +41,13 @@ export class ServerExecutionGuide {
         theme:
             'Server-side execution: the theme of a browser tab where the same user has the file open; "light" ' +
             "when there is none.",
-        selection: "Server-side execution: this session's own selection, not what the user selected in a browser.",
+        selection:
+            "Server-side execution: this session's own selection, not what the user selected in a browser; setting " +
+            "it also shows it on the user's tabs with 'AI follow' on.",
         openViewer: "Server-side execution: fails with `ui-only`; it would leave the editor.",
         openPage:
-            "Server-side execution: changes the session's current page; with `newWindow` true it fails with " +
-            "`ui-only`.",
+            "Server-side execution: changes the session's current page, and the page of the user's tabs with " +
+            "'AI follow' on; with `newWindow` true it fails with `ui-only`.",
     };
 
     private static readonly NOTES: Record<string, Record<string, string>> = {

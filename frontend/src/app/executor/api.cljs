@@ -25,6 +25,7 @@
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.persistence :as dps]
+   [app.main.data.websocket :as dws]
    [app.main.data.workspace.pages :as dwpg]
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.router :as rt]
@@ -143,6 +144,65 @@
   through `window.app`, which the executor does not have."
   [shapes]
   (public-utils/centerShapes shapes))
+
+(defn- following-tabs
+  "Sessions of the same user on the open file whose tab has \"AI follow\"
+  on, as their presence messages report it (PEN-24)."
+  []
+  (let [state @st/state
+        own   (:session-id state)]
+    (->> (:workspace-presence state)
+         (filter (fn [[session-id presence]]
+                   (and (not= own session-id)
+                        (= (:profile-id state) (:profile-id presence))
+                        (true? (:ai-follow presence)))))
+         (count))))
+
+(defn- send-follow!
+  "Sends a followed call to the user's tabs on the open file (the backend
+  hands `:broadcast` to the sessions of the same profile only) and records
+  it in the execution. Returns how many tabs follow."
+  [action fields]
+  (let [tabs (following-tabs)]
+    (when (pos? tabs)
+      (st/emit! (dws/send (merge {:type :broadcast
+                                  :kind :ai-follow
+                                  :action action
+                                  :file-id (current-file-id)
+                                  :page-id (:current-page-id @st/state)}
+                                 fields))))
+    (swap! execution
+           (fn [state]
+             (when state
+               (-> state
+                   (update :follow (fnil conj []) (name action))
+                   (assoc :follow-tabs tabs)))))
+    tabs))
+
+(defn ^:export follow
+  "Shows a call on the screen of the user's tabs that follow the session
+  (PEN-24): `{action, ...}` with `action` one of `page`, `select` (`ids`),
+  `center` (`x`, `y`), `zoom` (`zoom`), `zoom-reset`, `zoom-fit-all`,
+  `zoom-into-view` (`ids`). Returns how many tabs follow; with none, the
+  caller answers `ui-only` for the calls that only move a screen."
+  [^js action]
+  (let [kind (keyword (.-action action))]
+    (send-follow! kind
+                  (cond-> {}
+                    (some? (.-ids action)) (assoc :ids (mapv uuid/uuid (.-ids action)))
+                    (some? (.-x action)) (assoc :x (.-x action))
+                    (some? (.-y action)) (assoc :y (.-y action))
+                    (some? (.-zoom action)) (assoc :zoom (.-zoom action))))))
+
+(defn- changes-by-page
+  "The shapes among `ids` that exist in the open file, by page."
+  [ids]
+  (let [pages (:pages-index (dsh/lookup-file-data @st/state))]
+    (into {}
+          (keep (fn [[page-id {:keys [objects]}]]
+                  (let [here (filterv #(contains? objects %) ids)]
+                    (when (seq here) [page-id here]))))
+          pages)))
 
 (defn ^:export observedScreen
   "Screen of a browser tab of the same user on the open file, as its
@@ -300,7 +360,20 @@
                               (history/moved! direction file-id revn)
                               (history/record! file-id (:commits state) revn
                                                (:vern (dsh/lookup-file @st/state file-id)))))
-                changed   (disj (:changed state) uuid/zero)]
+                changed   (disj (:changed state) uuid/zero)
+                follow    (when (and (pos? saves) (seq changed) (pos? (following-tabs)))
+                            ;; tabs that follow on another page go to the page of the
+                            ;; changed shapes and show them selected (PEN-24)
+                            (let [tabs (following-tabs)]
+                              (st/emit! (dws/send {:type :broadcast
+                                                   :kind :ai-follow
+                                                   :action :show-changes
+                                                   :file-id file-id
+                                                   :pages (changes-by-page changed)}))
+                              {:tabs tabs :actions (conj (vec (:follow state)) "show-changes")}))
+                follow    (or follow
+                              (when (seq (:follow state))
+                                {:tabs (:follow-tabs state) :actions (:follow state)}))]
           #js {:saved (pos? saves)
                :fileId (some-> file-id str)
                :revnBefore before
@@ -313,7 +386,9 @@
                ;; derived values always complete before a save (see above)
                :computed #js {:layout true :text true :bool true :componentSync true}
                :pending nil
-               :warnings (clj->js warnings)})
+               :warnings (clj->js warnings)
+               ;; calls shown on the user's following tabs (PEN-24)
+               :follow (clj->js follow)})
         (p/catch (fn [cause]
                    (end-execution!)
                    (p/rejected (contract-error cause)))))))

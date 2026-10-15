@@ -6125,6 +6125,18 @@ msgstr "WebGL context was recovered"
 msgid "webhooks.last-delivery.success"
 msgstr "Last delivery was successful."
 
+#: src/app/main/data/workspace/ai_follow.cljs
+msgid "workspace.ai-follow.off"
+msgstr "This tab no longer follows your AI"
+
+#: src/app/main/data/workspace/ai_follow.cljs
+msgid "workspace.ai-follow.off-moved"
+msgstr "You moved the view, so this tab stopped following your AI. Turn it on again from the MCP menu."
+
+#: src/app/main/data/workspace/ai_follow.cljs
+msgid "workspace.ai-follow.on"
+msgstr "This tab now follows where your AI works in this file"
+
 #: src/app/main/ui/workspace/sidebar/options/menus/align.cljs:71
 msgid "workspace.align.hcenter"
 msgstr "Align horizontal center (%s)"
@@ -6540,6 +6552,14 @@ msgstr "Hide fonts palette"
 #: src/app/main/ui/workspace/main_menu.cljs:415
 msgid "workspace.header.menu.lock-guides"
 msgstr "Lock guides"
+
+#: src/app/main/ui/workspace/main_menu.cljs
+msgid "workspace.header.menu.mcp.ai-follow.off"
+msgstr "Stop following AI"
+
+#: src/app/main/ui/workspace/main_menu.cljs
+msgid "workspace.header.menu.mcp.ai-follow.on"
+msgstr "Follow AI in this tab"
 
 #: src/app/main/ui/workspace/main_menu.cljs:874
 msgid "workspace.header.menu.mcp.plugin.status.connect"

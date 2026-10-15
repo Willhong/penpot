@@ -125,6 +125,8 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 
 결과 값이 `Uint8Array`이면 1 MB까지는 base64 envelope(`{"__type":"base64","data":…}`)로, 그보다 크면 `{"__type":"resource", url, size, mtype, expiresAt}`로 돌려준다. URL은 같은 MCP token(`Authorization: Token …` 또는 `?userToken=`)으로만 받을 수 있다. `export_shape`도 서버 실행 연결에서는 같은 실행기 세션에서 내보낸다(`fileId`, `pageId` 인자).
 
+실행이 사용자의 화면을 움직였으면(PEN-24, D16) 결과에 `follow: {tabs, actions}`가 붙는다. `tabs`는 그 파일에서 'AI 따라가기'를 켠 같은 사용자의 탭 수, `actions`는 보낸 화면 신호(`page`, `select`, `center`, `zoom`, `zoom-reset`, `zoom-fit-all`, `zoom-into-view`, `show-changes`)다.
+
 클라이언트가 요청을 취소하거나 연결을 끊으면 실행기에 취소를 보낸다(D6).
 
 MCP server가 멈출 때(`SIGINT`/`SIGTERM`)는 연결을 닫기 전에 실행기부터 정리한다. 진행 중인 실행에 취소를 보내고 3초까지 기다린 뒤(저장 중이면 저장을 마친다) 프로세스를 끝낸다. 요청 ID 기록이 정리된 다음에 기록 저장소(Redis)를 닫는다.

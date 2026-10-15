@@ -55,6 +55,18 @@ export interface CommitReport {
     /** always null, see `computed` */
     pending?: Record<string, string[]> | null;
     warnings?: { code: string; shapeId?: string; fontId?: string; message?: string }[];
+    /** calls shown on the user's tabs with "AI follow" on (PEN-24); moved to {@link ExecutionResult.follow} */
+    follow?: FollowReport | null;
+}
+
+/**
+ * What an execution showed on the screens of the user's browser tabs with "AI follow" on (PEN-24).
+ */
+export interface FollowReport {
+    /** tabs of the user on the file that follow; 0 when none did */
+    tabs: number;
+    /** the calls shown, in order: `page`, `select`, `center`, `zoom`, ..., `show-changes` */
+    actions: string[];
 }
 
 /**
@@ -78,6 +90,8 @@ export interface ExecutionResult {
     engine: EngineInfo;
     /** true when this is the recorded result of an earlier run with the same `requestId` (D5) */
     replayed?: boolean;
+    /** what the execution showed on the user's tabs with "AI follow" on, when it moved any screen (PEN-24) */
+    follow?: FollowReport;
 }
 
 /**

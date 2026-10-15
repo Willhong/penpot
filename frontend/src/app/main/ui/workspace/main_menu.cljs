@@ -22,6 +22,7 @@
    [app.main.data.profile :as du]
    [app.main.data.shortcuts :as scd]
    [app.main.data.workspace :as dw]
+   [app.main.data.workspace.ai-follow :as ai-follow]
    [app.main.data.workspace.comments :as dwcm]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.mcp :as mcp]
@@ -45,6 +46,7 @@
    [app.util.i18n :as i18n :refer [tr]]
    [app.util.keyboard :as kbd]
    [beicon.v2.core :as rx]
+   [okulary.core :as l]
    [potok.v2.core :as ptk]
    [rumext.v2 :as mf]))
 
@@ -812,10 +814,28 @@
                [:> icon* {:icon-id i/help
                           :class (stl/css :item-icon)}]])]))])))
 
+(def ^:private ai-follow-ref
+  (l/derived ai-follow/following? st/state))
+
 (mf/defc mcp-menu*
   {::mf/private true}
-  [{:keys [on-close mcp]}]
+  [{:keys [on-close on-close-all mcp]}]
   (let [plugins-enabled? (features/use-feature "plugins/runtime")
+        following?       (mf/deref ai-follow-ref)
+
+        on-toggle-ai-follow
+        (mf/use-fn
+         (mf/deps on-close-all)
+         (fn []
+           (st/emit! (ai-follow/toggle))
+           (on-close-all)))
+
+        on-toggle-ai-follow-key-down
+        (mf/use-fn
+         (mf/deps on-toggle-ai-follow)
+         (fn [event]
+           (when (kbd/enter? event)
+             (on-toggle-ai-follow))))
         has-valid-token? (get mcp :token-valid)
         enabled?         (get mcp :enabled)
 
@@ -872,6 +892,17 @@
          (if connected?
            (tr "workspace.header.menu.mcp.plugin.status.disconnect")
            (tr "workspace.header.menu.mcp.plugin.status.connect"))]])
+
+     ;; PEN-24: this tab follows the user's server-side MCP sessions
+     [:> dropdown-menu-item* {:id          "mcp-menu-toggle-ai-follow"
+                              :data-testid "mcp-menu-toggle-ai-follow"
+                              :class       (stl/css :base-menu-item :submenu-item)
+                              :on-click    on-toggle-ai-follow
+                              :on-key-down on-toggle-ai-follow-key-down}
+      [:span {:class (stl/css :item-name)}
+       (if following?
+         (tr "workspace.header.menu.mcp.ai-follow.off")
+         (tr "workspace.header.menu.mcp.ai-follow.on"))]]
 
      [:> dropdown-menu-item* {:id          "mcp-menu-nav-to-integrations"
                               :class       (stl/css :base-menu-item :submenu-item)
@@ -1156,7 +1187,7 @@
                           :on-close close-sub-menu}]
 
        :mcp
-       [:> mcp-menu* {:on-close close-sub-menu :mcp mcp}]
+       [:> mcp-menu* {:on-close close-sub-menu :on-close-all close-all-menus :mcp mcp}]
 
        :help-info
        [:> help-info-menu* {:layout layout
