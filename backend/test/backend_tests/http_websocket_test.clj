@@ -173,3 +173,30 @@
     (t/testing "the MCP service is authenticated by the user's token"
       (t/is (= :websocket-request-expected
                (:code (handler-error cfg (request {"x-shared-key" "mcp mcp-secret"}))))))))
+
+(defn- join-message
+  "The :join-file message a connection publishes when it subscribes to `file`,
+  as the AI of its user (the MCP executor) when `ai?`."
+  [profile-id file-id ai?]
+  (let [published (atom [])
+        wsp       (cond-> (make-wsp profile-id (atom {}) (sp/chan :buf (sp/dropping-buffer 64)))
+                    ai? (assoc ::ws/ai? true))]
+    (with-redefs [mbus/pub! (fn [_ & {:keys [message]}] (swap! published conj message))
+                  mbus/sub! (fn [& _] nil)]
+      ((get-method ws/handle-message :subscribe-file)
+       th/*system* wsp {:file-id file-id}))
+    (some-> @(::util-ws/state wsp) ::ws/file-subscription :channel sp/close!)
+    (first (filter #(= :join-file (:type %)) @published))))
+
+(t/deftest executor-joins-a-file-as-the-ai-of-its-user
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)})]
+
+    (t/testing "the MCP executor's connection joins as AI (D3)"
+      (let [message (join-message (:id profile) (:id file) true)]
+        (t/is (= (:id profile) (:profile-id message)))
+        (t/is (true? (:ai message)))))
+
+    (t/testing "a browser's connection does not"
+      (t/is (not (contains? (join-message (:id profile) (:id file) false) :ai))))))

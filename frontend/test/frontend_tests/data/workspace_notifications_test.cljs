@@ -114,3 +114,15 @@
                (get-in state [:files file-id :data :pages-index page-id :comment-thread-positions])))
       (t/is (some #(= ::dcmt/retrieve-comments (ptk/type %)) (remove fn? @events))))))
 
+(t/deftest presence-keeps-the-ai-mark-of-a-session
+  (let [profile-id (uuid/next)
+        joined     (fn [message]
+                     (-> (ptk/update (dwn/handle-presence (merge {:type :join-file
+                                                                  :profile-id profile-id}
+                                                                 message))
+                                     {})
+                         :workspace-presence))]
+    (t/testing "the server-side MCP executor shows as AI (D3)"
+      (t/is (true? (get-in (joined {:session-id other-session :ai true}) [other-session :ai]))))
+    (t/testing "a browser session does not"
+      (t/is (not (contains? (get (joined {:session-id other-session}) other-session) :ai))))))

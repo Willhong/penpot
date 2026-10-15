@@ -12,22 +12,29 @@
    [app.config :as cfg]
    [app.main.refs :as refs]
    [app.util.dom :as dom]
+   [app.util.i18n :refer [tr]]
    [app.util.timers :as tm]
    [rumext.v2 :as mf]))
 
 (mf/defc session-widget*
   {::mf/props :obj
    ::mf/memo true}
-  [{:keys [color profile index]}]
+  [{:keys [color profile index ai]}]
   (let [profile       (assoc profile :color color)
-        full-name     (:fullname profile)]
+        ;; the user's AI working through the server-side MCP (D3)
+        full-name     (if ai
+                        (tr "workspace.presence.ai-session" (:fullname profile))
+                        (:fullname profile))]
     [:li {:class (stl/css :session-icon)
           :style {:z-index (dm/str (+ 2 (* -1 index)))
                   :background-color color}
-          :title full-name}
+          :title full-name
+          :data-ai (when ai "true")}
      [:img {:alt full-name
             :style {:background-color color}
-            :src (cfg/resolve-profile-photo-url profile)}]]))
+            :src (cfg/resolve-profile-photo-url profile)}]
+     (when ai
+       [:span {:class (stl/css :ai-badge)} "AI"])]))
 
 (mf/defc active-sessions*
   {::mf/memo true}
@@ -63,6 +70,7 @@
            [:> session-widget*
             {:color (:color session)
              :index 0
+             :ai (:ai session)
              :profile (get profiles (:profile-id session))
              :key (dm/str (:id session))}])]])
 
@@ -76,5 +84,6 @@
          [:> session-widget*
           {:color (:color session)
            :index index
+           :ai (:ai session)
            :profile (get profiles (:profile-id session))
            :key (dm/str (:id session))}])]]]))

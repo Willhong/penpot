@@ -181,7 +181,7 @@
 
 
 (defmethod handle-message :subscribe-file
-  [cfg {:keys [::ws/id ::ws/state ::ws/output-ch ::session-id ::profile-id]} {:keys [file-id] :as params}]
+  [cfg {:keys [::ws/id ::ws/state ::ws/output-ch ::session-id ::profile-id ::ai?]} {:keys [file-id] :as params}]
   (l/trace :fn "handle-message" :event "subscribe-file" :file-id file-id :conn-id id)
   (bfc/check-file-exists cfg file-id)
   (files/check-read-permissions! cfg profile-id file-id)
@@ -203,10 +203,11 @@
         (when (or (= :join-file type)
                   (= :leave-file type)
                   (= :disconnect type))
-          (let [message {:type :presence
-                         :file-id file-id
-                         :session-id session-id
-                         :profile-id profile-id}]
+          (let [message (cond-> {:type :presence
+                                 :file-id file-id
+                                 :session-id session-id
+                                 :profile-id profile-id}
+                          ai? (assoc :ai true))]
             (mbus/pub! (::mbus/msgbus cfg)
                        :topic file-id
                        :message message)))
@@ -215,11 +216,14 @@
     ;; Subscribe to file topic
     (mbus/sub! (::mbus/msgbus cfg) :topic file-id :chan fch)
 
-    ;; Notifify the rest of participants of the new connection.
-    (let [message {:type :join-file
-                   :file-id file-id
-                   :session-id session-id
-                   :profile-id profile-id}]
+    ;; Notifify the rest of participants of the new connection. A
+    ;; connection of the server-side MCP executor joins as the AI of its
+    ;; user (D3): the backend knows it, so no client can claim it.
+    (let [message (cond-> {:type :join-file
+                           :file-id file-id
+                           :session-id session-id
+                           :profile-id profile-id}
+                    ai? (assoc :ai true))]
       (mbus/pub! (::mbus/msgbus cfg) :topic file-id :message message))))
 
 (defmethod handle-message :unsubscribe-file
@@ -311,9 +315,10 @@
         ;; A browser authenticates with its session cookie. The server-side
         ;; MCP executor has none: it presents the user's token with the MCP
         ;; shared key. Other token holders keep using RPC only.
-        profile-id (or (::session/profile-id request)
-                       (when (actoken/mcp-service-request? request (::setup/shared-keys cfg))
-                         (::actoken/profile-id request)))]
+        executor-id (when (and (nil? (::session/profile-id request))
+                               (actoken/mcp-service-request? request (::setup/shared-keys cfg)))
+                      (::actoken/profile-id request))
+        profile-id  (or (::session/profile-id request) executor-id)]
     (when-not (uuid? session-id)
       (ex/raise :type :validation
                 :code :missing-session-id
@@ -342,7 +347,8 @@
                                      ::ws/on-connect (partial on-connect cfg)
                                      ::ws/handler (partial handle-message cfg)
                                      ::profile-id profile-id
-                                     ::session-id session-id)}))))
+                                     ::session-id session-id
+                                     ::ai? (some? executor-id))}))))
 
 
 (def ^:private schema:routes-params

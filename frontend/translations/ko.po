@@ -4238,6 +4238,10 @@ msgstr "화면을 직접 움직여 AI 따라가기를 껐습니다. MCP 메뉴�
 msgid "workspace.ai-follow.on"
 msgstr "이 탭이 이 파일에서 AI가 작업하는 곳을 따라갑니다"
 
+#: src/app/main/ui/workspace/presence.cljs
+msgid "workspace.presence.ai-session"
+msgstr "AI (%s)"
+
 #: src/app/main/ui/workspace/sidebar/options/menus/align.cljs:71
 msgid "workspace.align.hcenter"
 msgstr "가로 가운데 정렬 (%s)"

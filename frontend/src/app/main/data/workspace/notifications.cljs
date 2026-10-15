@@ -247,7 +247,7 @@
     })
 
 (defn handle-presence
-  [{:keys [type session-id profile-id version] :as message}]
+  [{:keys [type session-id profile-id version ai] :as message}]
   (letfn [(get-next-color [presence]
             (let [xfm   (comp (map second)
                               (map :color)
@@ -269,7 +269,10 @@
                 (assoc :updated-at (ct/now))
                 (assoc :version version)
                 (update :color update-color presence)
-                (assoc :text-color "#000000")))
+                (assoc :text-color "#000000")
+                ;; the server-side MCP executor working as the user (D3);
+                ;; the backend marks it, the session never stops being one
+                (cond-> (true? ai) (assoc :ai true))))
 
           (update-presence [presence]
             (-> presence

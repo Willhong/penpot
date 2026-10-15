@@ -59,7 +59,29 @@
 .session-icon {
   @extend %user-icon;
 
+  position: relative;
   margin-inline-start: var(--user-list-inline-margin, calc(-1 * var(--sp-xs)));
+}
+
+// the user's AI working through the server-side MCP (D3): a dashed ring and
+// an "AI" tag under the avatar, above the avatars it overlaps
+.session-icon[data-ai] img {
+  border-style: dashed;
+}
+
+.ai-badge {
+  @include t.use-typography("body-small");
+
+  position: absolute;
+  z-index: 1;
+  inset-block-end: calc(-1 * var(--sp-s));
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  padding: 0 var(--sp-xxs);
+  border-radius: $br-4;
+  background-color: var(--user-count-background-color);
+  color: var(--user-count-foreground-color);
+  white-space: nowrap;
 }
 
 .active-users-opened {
