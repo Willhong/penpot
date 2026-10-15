@@ -18,7 +18,7 @@ interface ExecutorBundle {
         frontendVersion: string | null;
     };
     openFile(fileId: string, pageId: string | null): Promise<unknown>;
-    beginExecution(): void;
+    beginExecution(options: { ifUnchangedSinceRevn?: number }): void;
     finishExecution(options: { settleTimeout: number }): Promise<CommitReport>;
     abortExecution(): Promise<void>;
 }
@@ -70,8 +70,13 @@ export class HeadlessEngine {
         await this.bundle.openFile(fileId, pageId ?? null);
     }
 
-    beginExecution(): void {
-        this.bundle.beginExecution();
+    /**
+     * Starts an execution.
+     *
+     * @param ifUnchangedSinceRevn - D4 precondition, checked again right before the save
+     */
+    beginExecution(ifUnchangedSinceRevn?: number): void {
+        this.bundle.beginExecution({ ifUnchangedSinceRevn });
     }
 
     /**

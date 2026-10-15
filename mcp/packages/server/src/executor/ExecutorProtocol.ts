@@ -70,6 +70,8 @@ export interface ExecutionResult {
     /** commit report; null when the execution changed nothing */
     commit: CommitReport | null;
     engine: EngineInfo;
+    /** true when this is the recorded result of an earlier run with the same `requestId` (D5) */
+    replayed?: boolean;
 }
 
 /**
@@ -84,6 +86,11 @@ export interface ExecuteParams {
     pageId?: string;
     /** bound for waiting on derived values (layout, text) after the code, in ms */
     settleTimeoutMs?: number;
+    /**
+     * Optional precondition (D4): run and save only if the file is still at this revn, i.e. nobody changed it
+     * since the client read it; `precondition-failed` otherwise.
+     */
+    ifUnchangedSinceRevn?: number;
 }
 
 /**
@@ -103,7 +110,9 @@ export interface ExecutorStatus {
 export type ExecutorRequest =
     | { id: number; type: "init"; token: string; sharedKey: string | null }
     | { id: number; type: "execute"; params: ExecuteParams }
-    | { id: number; type: "status" };
+    | { id: number; type: "status" }
+    /** cancels the running execution if it has not started saving (D6); answers whether it did */
+    | { id: number; type: "cancel" };
 
 /**
  * Response sent by an executor process, correlated by request ID.

@@ -55,7 +55,7 @@
                                                "resources/public/js")})
             opened (api/openFile file-id page-id)
             start  (js/Date.now)
-            _      (api/beginExecution)
+            _      (api/beginExecution #js {})
             result (-> (run-code code)
                        (p/catch (fn [cause]
                                   (p/do (api/abortExecution)

@@ -3,6 +3,7 @@ import { ExecutorConfig } from "./ExecutorConfig";
 import { ExecutorError } from "./ExecutorError";
 import type { ExecuteParams, ExecutionResult } from "./ExecutorProtocol";
 import { ExecutorProcess } from "./ExecutorProcess";
+import { MemoryLedgerStore, RedisLedgerStore, RequestLedger } from "./RequestLedger";
 
 /**
  * One executor session: a process and the queue that runs its executions one at a time.
@@ -55,8 +56,14 @@ export class ExecutorPool {
     private readonly runningByUser = new Map<string, number>();
     private running = 0;
     private readonly idleTimer: NodeJS.Timeout;
+    private readonly ledger: RequestLedger;
 
     constructor(private readonly config: ExecutorConfig) {
+        this.ledger = new RequestLedger(
+            config.redisUri
+                ? new RedisLedgerStore(config.redisUri, `penpot-mcp:${config.tenant}:executor-request:`)
+                : new MemoryLedgerStore()
+        );
         this.idleTimer = setInterval(() => this.closeIdleSessions(), Math.min(config.idleMs, 60_000));
         this.idleTimer.unref();
     }
@@ -68,13 +75,21 @@ export class ExecutorPool {
      * @param sessionName - the executor session; each name has its own process, storage and open file
      * @param params - the execution
      * @param signal - aborts the execution before its save (D6)
+     * @param requestId - the client's ID of this request; a retry with the same ID within 10 minutes gets the
+     *   first run's result instead of running again (D5)
      */
     async execute(
         token: string,
         sessionName: string,
         params: ExecuteParams,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        requestId?: string
     ): Promise<ExecutionResult> {
+        if (requestId) {
+            return this.ledger.once(ExecutorConfig.fingerprint(token), requestId, () =>
+                this.execute(token, sessionName, params, signal)
+            );
+        }
         const userKey = ExecutorConfig.fingerprint(token);
         const key = `${userKey}:${sessionName}`;
         let session = this.sessions.get(key);
@@ -161,6 +176,7 @@ export class ExecutorPool {
      */
     async close(): Promise<void> {
         clearInterval(this.idleTimer);
+        await this.ledger.close();
         for (const session of this.sessions.values()) {
             (await session.started?.catch(() => null))?.kill(null);
         }

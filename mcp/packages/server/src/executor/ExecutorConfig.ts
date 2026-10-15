@@ -36,6 +36,9 @@ export class ExecutorConfig {
     readonly maxExecutions: number;
     readonly idleMs: number;
     readonly settleTimeoutMs: number;
+    /** Redis for the request ledger (D5), shared by MCP server instances; in memory without it */
+    readonly redisUri: string | null;
+    readonly tenant: string;
 
     constructor(env: Record<string, string | undefined>) {
         const here = dirname(fileURLToPath(import.meta.url));
@@ -65,6 +68,8 @@ export class ExecutorConfig {
         this.maxExecutions = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_MAX, cpus().length);
         this.idleMs = 1000 * ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_IDLE_S, 900);
         this.settleTimeoutMs = ExecutorConfig.int(env.PENPOT_MCP_EXECUTOR_SETTLE_TIMEOUT_MS, 10000);
+        this.redisUri = env.PENPOT_MCP_REDIS_URI ?? null;
+        this.tenant = env.PENPOT_TENANT ?? "default";
     }
 
     /**

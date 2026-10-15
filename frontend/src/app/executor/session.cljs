@@ -25,6 +25,7 @@
    [app.main.data.helpers :as dsh]
    [app.main.data.persistence :as dps]
    [app.main.data.team :as dtm]
+   [app.main.data.websocket :as dws]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.pages :as dwpg]
    [app.main.data.workspace.reflow :as wrf]
@@ -120,7 +121,10 @@
               ;; renderer the profile prefers.
               #(assoc-in % [:profile :props :renderer] :wasm)
               (rt/initialize-router routes)
-              (dps/initialize-persistence))
+              (dps/initialize-persistence)
+              ;; as `app.main` does once the profile is known: other
+              ;; sessions' changes reach the open file through it
+              (dws/initialize))
     ;; The browser lands on the default team's dashboard: `penpotMgmt` calls
     ;; made before opening a file need that team and its features.
     (p/do (emit-and-wait! ::dtm/team-initialized
@@ -198,7 +202,15 @@
                  (rx/filter #(not (::rt/new-window (:options @%))))))
   (rx/subs! (fn [_] (load-page-shapes!))
             (->> st/stream
-                 (rx/filter (ptk/type? ::dwpg/initialized)))))
+                 (rx/filter (ptk/type? ::dwpg/initialized))))
+  ;; A reload of the open file (another session restored a version) fetches
+  ;; it again without initializing the page; the wasm viewport reloads its
+  ;; shapes on the new version, so does the executor.
+  (rx/subs! (fn [_]
+              (when (:current-page-id @st/state)
+                (load-page-shapes!)))
+            (->> st/stream
+                 (rx/filter (ptk/type? ::dw/bundle-fetched)))))
 
 (defn open!
   "Opens `file-id` (and `page-id`, or the file's first page) as

@@ -84,6 +84,8 @@ async function handle(request: ExecutorRequest): Promise<unknown> {
             return runtime.execute(request.params);
         case "status":
             return runtime.status();
+        case "cancel":
+            return runtime.cancel();
     }
 }
 

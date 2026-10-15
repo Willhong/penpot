@@ -44,8 +44,8 @@
                                (case cmd
                                  :get-team-users (rx/of [])
                                  :update-file-snapshot (rx/of true))))]
-        (-> (.pin version)
-            (.then (fn [pinned]
+        (-> (.pin ^js version)
+            (.then (fn [^js pinned]
                      (t/is (false? (.-isAutosave pinned)))
                      (t/is (not= "internal/snapshot/3" (.-label pinned)))
                      (t/is (= snapshot-id (get-in @calls [1 1 :id])))

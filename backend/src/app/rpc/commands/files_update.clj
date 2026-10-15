@@ -459,6 +459,33 @@
        (mapv (fn [row]
                (update row :changes blob/decode)))))
 
+;; --- QUERY COMMAND: get-file-changes
+
+(def ^:private schema:get-file-changes
+  [:map {:title "get-file-changes"}
+   [:file-id ::sm/uuid]
+   [:since-revn [::sm/int {:min 0}]]])
+
+(sv/defmethod ::get-file-changes
+  "Changes saved to a file after `since-revn`, oldest first, with the revn and
+  session of each save: what a client missed while its notification
+  connection was down. `:complete` is false when some saves of that range
+  are no longer kept (file changes are collected after about an hour); the
+  client then reloads the file instead."
+  {::doc/added "2.18"
+   ::sm/params schema:get-file-changes}
+  [cfg {:keys [::rpc/profile-id file-id since-revn]}]
+  (db/run! cfg
+           (fn [{:keys [::db/conn] :as cfg}]
+             (files/check-read-permissions! cfg profile-id file-id)
+             (let [file  (files/get-minimal-file cfg file-id)
+                   rows  (get-lagged-changes conn {:id file-id :revn since-revn})
+                   revns (mapv :revn rows)]
+               {:revn (:revn file)
+                :vern (:vern file)
+                :complete (= revns (vec (range (inc since-revn) (inc (:revn file)))))
+                :changes (mapv #(select-keys % [:revn :session-id :changes]) rows)}))))
+
 (defn- send-notifications!
   [cfg {:keys [team changes session-id] :as params} file]
   (let [lchanges (filter library-change? changes)

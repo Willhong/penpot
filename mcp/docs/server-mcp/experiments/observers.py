@@ -94,6 +94,34 @@ return cljs.core.into_array(cljs.core.map((id) => cljs.core.get(cljs.core.get(in
                                           cljs.core.get(data, k("pages"))));
 """, reload=reload)
 
+    def open_droppable(self, label, file_id, page_id=None):
+        """Opens the file in a tab that records its WebSocket objects, so `drop_notifications` can cut them."""
+        team = mcpv.fixtures()["team"]["id"]
+        query = f"team-id={team}&file-id={file_id}" + (f"&page-id={page_id}" if page_id else "")
+        script = """
+const task = await taskSpace(%d);
+const page = task.page(%s);
+await page.cdp("Page.enable", {});
+await page.cdp("Page.addScriptToEvaluateOnNewDocument", { source: `
+  (() => { const Native = window.WebSocket; window.__sockets = [];
+    window.WebSocket = function (url, protocols) { const ws = new Native(url, protocols); window.__sockets.push(ws); return ws; };
+    window.WebSocket.prototype = Native.prototype;
+    for (const k of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) window.WebSocket[k] = Native[k]; })();` });
+await page.goto(%s);
+await page.reload();
+await page.waitForFunction(%s, undefined, { timeout: 60000 });
+console.log("RESULT=" + JSON.stringify(await page.evaluate(() => Array.isArray(window.__sockets))));
+""" % (self.space, json.dumps(label), json.dumps(f"http://{HOSTS[label]}:3550/#/workspace?{query}"), READY)
+        return marked(ego(script), "RESULT=")
+
+    def drop_notifications(self, label):
+        """Closes the tab's open notification sockets, as a network drop would; returns how many."""
+        return self.evaluate(label, """
+const open = window.__sockets.filter((w) => w.url.includes("/ws/notifications") && w.readyState === 1);
+open.forEach((w) => w.close(4000, "network drop"));
+return open.length;
+""")
+
     def run_code(self, label, code, settle=1500):
         """Runs Plugin API code in a tab's open workspace the way the MCP plugin does (`browser_run.js`).
         Returns {ok, ms, result | error}."""

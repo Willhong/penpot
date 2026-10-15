@@ -54,8 +54,9 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 | 요청 | 인자 | 응답 |
 |---|---|---|
 | `init` | `token`(사용자 MCP token), `sharedKey` | `ExecutorStatus` |
-| `execute` | `ExecuteParams`: `code`, `fileId?`, `pageId?`, `settleTimeoutMs?` | `ExecutionResult` |
+| `execute` | `ExecuteParams`: `code`, `fileId?`, `pageId?`, `settleTimeoutMs?`, `ifUnchangedSinceRevn?` | `ExecutionResult` |
 | `status` | — | `ExecutorStatus` |
+| `cancel` | — | 코드 실행 중이면 `true`(그 실행은 `cancelled`로 끝남), 저장 중이면 `false` |
 
 실패는 `{code, message, saved}`다. `code`는 `03` §7의 오류 코드다. token은 환경 변수가 아니라 `init` 요청으로만 건넨다.
 
@@ -86,6 +87,17 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 - `computed`가 false면 `pending`에 아직 끝나지 않은 작업을 도형 id별로 적는다(`settleTimeout` 초과).
 - 아무것도 바꾸지 않은 실행은 `commit`이 `null`이다.
 
+### `execute_code` 도구 인자 (서버 실행일 때)
+
+| 인자 | 의미 |
+|---|---|
+| `fileId`, `pageId` | 실행 전에 열 파일·페이지 |
+| `sessionId` | 실행기 세션 이름(기본 `default`) |
+| `requestId` | D5: 같은 ID의 재시도는 10분 동안 첫 결과를 `replayed: true`로 돌려준다 |
+| `ifUnchangedSinceRevn` | D4: 파일이 그 revn 뒤로 바뀌었으면 실행·저장하지 않고 `precondition-failed`. 시작할 때와 저장 직전에 확인한다 |
+
+클라이언트가 요청을 취소하거나 연결을 끊으면 실행기에 취소를 보낸다(D6).
+
 ## 4. 실행 1회의 순서
 
 1. `fileId`가 있으면 연다. 없으면 세션이 마지막으로 연 파일을 쓴다.
@@ -101,7 +113,8 @@ MCP 클라이언트 ──HTTP──▶ MCP server (mcp/packages/server)
 - 한 세션의 실행은 차례로 돈다. `storage`, 열린 파일, `penpot.localStorage`(메모리)가 세션 동안 남는다.
 - MCP server의 비밀 값과 다른 사용자의 token은 프로세스에 없다. 환경 변수는 경로·URI·flag만 준다.
 - 프로세스가 끝나면(시간 초과, 메모리 초과, 유휴 정리) 그 세션 상태는 사라진다. 다음 호출은 새 프로세스로 시작한다.
-- 다른 MCP server 인스턴스로 간 요청은 그 인스턴스에서 새 세션을 연다. 인스턴스 사이 라우팅은 PEN-21에서 정한다.
+- 다른 MCP server 인스턴스로 간 요청은 그 인스턴스에서 새 세션을 연다. 인스턴스 사이 라우팅은 PEN-21에서 정한다. `requestId` 기록은 Redis로 인스턴스끼리 공유한다.
+- 세션은 알림 WebSocket으로 다른 사람의 변경을 받아 열린 파일을 최신으로 둔다. 연결이 끊겼다 붙으면 놓친 변경을 `get-file-changes`로 받는다(브라우저와 같은 코드).
 
 ## 6. 자원 제한·로그 (D9) — 측정값
 

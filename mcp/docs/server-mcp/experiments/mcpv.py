@@ -67,7 +67,7 @@ def rpc(method, params, token=None, base_uri=None):
 
 def rpc_ok(method, params, token=None):
     status, payload, _ = rpc(method, params, token)
-    if status != 200:
+    if status not in (200, 204):
         raise RuntimeError(f"{method} failed: {status} {payload}")
     return payload
 

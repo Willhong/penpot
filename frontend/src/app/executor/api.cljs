@@ -62,6 +62,7 @@
                    ;; workspace refuses it before sending (03-runtime-contract §7)
                    (or (#{:object-not-found :not-found :save-permission-denied} code)
                        (= type :not-found)) "not-found"
+                   (= code :precondition-failed) "precondition-failed"
                    (= code :revn-conflict) "revn-conflict"
                    (= code :vern-conflict) "vern-conflict"
                    (= type :validation) "validation"
@@ -125,8 +126,10 @@
 
 (defn ^:export beginExecution
   "Starts an execution: holds the autosave so the execution is saved in one
-  request, and starts recording what it changes."
-  []
+  request, and starts recording what it changes. Option
+  `ifUnchangedSinceRevn` (D4) makes the save refuse when the file moved past
+  that revn in the meantime."
+  [^js opts]
   (let [file-id (current-file-id)
         sub     (->> st/stream
                      (rx/filter dch/commit?)
@@ -152,6 +155,7 @@
                                         (session/wait-event ::dwpg/initialized)))))]
     (reset! dps/autosave-held? true)
     (reset! execution {:file-id file-id
+                       :precondition (some-> opts .-ifUnchangedSinceRevn)
                        :revn-before (some-> file-id file-revn)
                        :changed #{}
                        :saves 0
@@ -180,6 +184,14 @@
                             (throw (ex-info "this user has read-only access to the file; its edits were not applied"
                                             {:type :not-found :code :object-not-found})))
                 pending   (session/settle! settle-timeout)
+                ;; D4, checked again right before the save: another session's
+                ;; change may have arrived while the code ran
+                _         (let [{:keys [precondition file-id]} @execution
+                                revn (some-> file-id file-revn)]
+                            (when (and (some? precondition) (some? revn) (> revn precondition))
+                              (throw (ex-info (str "the file changed since revn " precondition
+                                                   " (now " revn "); nothing was saved")
+                                              {:type :validation :code :precondition-failed}))))
                 _         (session/flush!)
                 state     (end-execution!)
                 file-id   (or (current-file-id) (:file-id state))

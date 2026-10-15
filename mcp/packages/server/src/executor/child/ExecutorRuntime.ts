@@ -41,6 +41,9 @@ export class ExecutorRuntime {
     private api!: ServerPluginApi;
     private readonly sandbox = new Sandbox();
     private readonly storage: Record<string, unknown> = {};
+    /** phase of the execution in progress, for cancellation (D6) */
+    private phase: "idle" | "running" | "saving" = "idle";
+    private cancelRequested = false;
 
     constructor(private readonly config: ExecutorRuntimeConfig) {}
 
@@ -77,7 +80,38 @@ export class ExecutorRuntime {
         if (params.fileId) {
             await this.openFile(params.fileId, params.pageId);
         }
+        if (params.ifUnchangedSinceRevn !== undefined) {
+            const revn = this.engine.status().revn;
+            if (revn !== null && revn > params.ifUnchangedSinceRevn) {
+                throw new ExecutorError(
+                    "precondition-failed",
+                    `the file changed since revn ${params.ifUnchangedSinceRevn} (now ${revn}); the code did not run`
+                );
+            }
+        }
 
+        this.phase = "running";
+        this.cancelRequested = false;
+        try {
+            return await this.run(params);
+        } finally {
+            this.phase = "idle";
+        }
+    }
+
+    /**
+     * Cancels the execution in progress unless it is saving already (D6). Returns whether it will end with
+     * `cancelled` and save nothing.
+     */
+    cancel(): boolean {
+        if (this.phase !== "running") {
+            return false;
+        }
+        this.cancelRequested = true;
+        return true;
+    }
+
+    private async run(params: ExecuteParams): Promise<ExecutionResult> {
         const flags = this.api.penpot.flags;
         const previousFlags = [flags.naturalChildOrdering, flags.throwValidationErrors];
         flags.naturalChildOrdering = true;
@@ -85,7 +119,7 @@ export class ExecutorRuntime {
 
         // a console per execution: the sandbox hardens what it hands to user code
         const console = new ExecuteCodeTaskConsole();
-        this.engine.beginExecution();
+        this.engine.beginExecution(params.ifUnchangedSinceRevn);
         let result: unknown;
         try {
             result = await this.sandbox.run(params.code, {
@@ -103,6 +137,11 @@ export class ExecutorRuntime {
             this.api.reset();
         }
 
+        if (this.cancelRequested) {
+            await this.engine.abortExecution();
+            throw new ExecutorError("cancelled", "the execution was cancelled before its save");
+        }
+        this.phase = "saving";
         let commit;
         try {
             commit = await this.engine.finishExecution(params.settleTimeoutMs ?? this.config.settleTimeoutMs);

@@ -31,6 +31,24 @@ export class ExecuteCodeArgs {
             .uuid()
             .optional()
             .describe("Server-side execution only: the page of `fileId` to open (default: its first page)."),
+        requestId: z
+            .string()
+            .min(1)
+            .max(128)
+            .optional()
+            .describe(
+                "Server-side execution only: your ID for this request. Retrying with the same ID within 10 minutes " +
+                    "returns the first run's result (`replayed: true`) instead of applying the change twice."
+            ),
+        ifUnchangedSinceRevn: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe(
+                "Server-side execution only: run and save only if the file is still at this revn (the `revn` of " +
+                    "an earlier result); fails with `precondition-failed` when someone changed it since."
+            ),
     };
 
     /**
@@ -43,6 +61,10 @@ export class ExecuteCodeArgs {
     fileId?: string;
 
     pageId?: string;
+
+    requestId?: string;
+
+    ifUnchangedSinceRevn?: number;
 }
 
 /**
@@ -110,8 +132,14 @@ export class ExecuteCodeTool extends Tool<ExecuteCodeArgs> {
             const result = await pool.execute(
                 token,
                 args.sessionId ?? "default",
-                { code: args.code, fileId: args.fileId, pageId: args.pageId },
-                signal
+                {
+                    code: args.code,
+                    fileId: args.fileId,
+                    pageId: args.pageId,
+                    ifUnchangedSinceRevn: args.ifUnchangedSinceRevn,
+                },
+                signal,
+                args.requestId
             );
             return new TextResponse(JSON.stringify(result, null, 2));
         }

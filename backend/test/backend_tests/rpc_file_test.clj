@@ -2994,3 +2994,53 @@
                             :file-id (:id file)})]
     (t/is (th/ex-info? (:error out)))
     (t/is (th/ex-of-type? (:error out) :not-found))))
+
+(t/deftest get-file-changes-returns-what-a-client-missed
+  (let [profile  (th/create-profile* 1 {:is-active true})
+        outsider (th/create-profile* 2 {:is-active true})
+        file     (th/create-file* 1 {:profile-id (:id profile)
+                                     :project-id (:default-project-id profile)
+                                     :is-shared false})
+        session  (uuid/next)
+        page-id  (uuid/next)
+        save!    (fn [revn changes]
+                   (let [out (th/command! {::th/type :update-file
+                                           ::rpc/profile-id (:id profile)
+                                           :id (:id file)
+                                           :session-id session
+                                           :revn revn
+                                           :vern 0
+                                           :features (cfeat/get-enabled-features cf/flags)
+                                           :changes changes})]
+                     (t/is (nil? (:error out)))))
+        changes  (fn [profile-id since]
+                   (th/command! {::th/type :get-file-changes
+                                 ::rpc/profile-id profile-id
+                                 :file-id (:id file)
+                                 :since-revn since}))]
+
+    (save! 0 [{:type :add-page :name "first" :id page-id}])
+    (save! 1 [{:type :mod-page :id page-id :name "second"}])
+
+    (t/testing "every save after the given revn, oldest first, with its session"
+      (let [{:keys [result error]} (changes (:id profile) 0)]
+        (t/is (nil? error))
+        (t/is (= 2 (:revn result)))
+        (t/is (true? (:complete result)))
+        (t/is (= [1 2] (mapv :revn (:changes result))))
+        (t/is (every? #(= session (:session-id %)) (:changes result)))
+        (t/is (= [:add-page] (mapv :type (:changes (first (:changes result))))))))
+
+    (t/testing "only what came after the given revn"
+      (let [{:keys [result]} (changes (:id profile) 1)]
+        (t/is (= [2] (mapv :revn (:changes result))))
+        (t/is (true? (:complete result)))))
+
+    (t/testing "incomplete when saves of the range are no longer kept"
+      (db/delete! th/*system* :file-change {:file-id (:id file) :revn 1})
+      (let [{:keys [result]} (changes (:id profile) 0)]
+        (t/is (false? (:complete result)))))
+
+    (t/testing "a user who may not read the file gets nothing"
+      (let [{:keys [error]} (changes (:id outsider) 0)]
+        (t/is (= :not-found (th/ex-type error)))))))

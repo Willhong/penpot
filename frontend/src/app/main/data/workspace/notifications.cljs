@@ -24,6 +24,7 @@
    [app.main.data.workspace.layout :as dwly]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.texts :as dwt]
+   [app.main.repo :as rp]
    [app.main.router :as rt]
    [app.util.globals :refer [global]]
    [app.util.mouse :as mse]
@@ -44,6 +45,7 @@
 (declare handle-library-change)
 (declare handle-pointer-send)
 (declare handle-export-update)
+(declare fetch-missed-changes)
 
 (defn initialize
   [team-id file-id]
@@ -86,6 +88,11 @@
                                   (rx/filter (ptk/type? ::dws/opened))
                                   (rx/mapcat #(->> (rx/from initmsg)
                                                    (rx/map dws/send))))
+
+                             ;; and catch up with what was published meanwhile
+                             (->> stream
+                                  (rx/filter (ptk/type? ::dws/opened))
+                                  (rx/map #(fetch-missed-changes file-id)))
 
                              ;; Emit presence event for current user;
                              ;; this is because websocket server don't
@@ -274,6 +281,41 @@
                           :source :remote
                           :redo-changes (vec changes)
                           :undo-changes []})))))
+
+(defn- fetch-missed-changes
+  "Applies the changes other sessions saved while the notification
+  connection was down: they were published while nobody listened for them.
+  Reloads the file when the backend no longer has them all, or when the
+  file was restored meanwhile."
+  [file-id]
+  (ptk/reify ::fetch-missed-changes
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file       (dsh/lookup-file state file-id)
+            since      (:revn file)
+            session-id (:session-id state)]
+        (if (or (nil? file) (nil? since))
+          (rx/empty)
+          (->> (rp/cmd! :get-file-changes {:file-id file-id :since-revn since})
+               (rx/mapcat
+                (fn [{:keys [complete changes vern]}]
+                  (if (or (not complete) (not= vern (:vern file)))
+                    (rx/of (ptk/event ::dw/reload-current-file))
+                    (->> changes
+                         ;; this session's own saves are applied already
+                         (remove #(= session-id (:session-id %)))
+                         (map (fn [{:keys [revn changes]}]
+                                (dch/commit {:file-id file-id
+                                             :file-revn revn
+                                             :file-vern vern
+                                             :save-undo? false
+                                             :source :remote
+                                             :redo-changes (vec changes)
+                                             :undo-changes []})))
+                         (rx/from)))))
+               (rx/catch (fn [cause]
+                           (js/console.error "unable to catch up with missed changes" cause)
+                           (rx/empty)))))))))
 
 (defn handle-file-deleted
   [{:keys [file-id] :as msg}]

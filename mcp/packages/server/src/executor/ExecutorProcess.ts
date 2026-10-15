@@ -97,6 +97,29 @@ export class ExecutorProcess {
     }
 
     /**
+     * Cancels the running execution (D6): before its save it ends with `cancelled` and saves nothing; once
+     * saving, it completes with its result. A process too busy to answer (user code that never yields) is
+     * still before its save, so it is ended.
+     */
+    private cancel(): void {
+        let answered = false;
+        const timer = setTimeout(() => {
+            if (!answered) {
+                this.kill(new ExecutorError("cancelled", "the execution was cancelled before its save"));
+            }
+        }, ExecutorProcess.CANCEL_ANSWER_MS);
+        this.request<boolean>({ type: "cancel" })
+            .then(() => {
+                answered = true;
+                clearTimeout(timer);
+            })
+            .catch(() => clearTimeout(timer));
+    }
+
+    /** how long a cancelled execution's process may take to acknowledge before it is ended */
+    private static readonly CANCEL_ANSWER_MS = 2000;
+
+    /**
      * Ends the process. Pending requests fail with `reason`, or `cancelled` when none is given.
      */
     kill(reason: ExecutorError | null): void {
@@ -114,8 +137,7 @@ export class ExecutorProcess {
         const id = this.nextId++;
         return new Promise<T>((resolve, reject) => {
             let timer: NodeJS.Timeout | undefined;
-            const onAbort = () =>
-                this.kill(new ExecutorError("cancelled", "the request was cancelled before the save"));
+            const onAbort = () => this.cancel();
             const settle = () => {
                 clearTimeout(timer);
                 signal?.removeEventListener("abort", onAbort);
@@ -162,14 +184,17 @@ export class ExecutorProcess {
 
     private onExit(code: number | null, signal: NodeJS.Signals | null): void {
         this.exited = true;
+        const stopped = signal === "SIGINT" || signal === "SIGTERM";
         const reason =
             this.exitReason ??
-            (this.initialized
-                ? new ExecutorError(
-                      "resource-limit",
-                      `the executor process ended (code ${code}, signal ${signal}); it may have run out of memory`
-                  )
-                : new ExecutorError("engine-error", `the executor process failed to start (code ${code})`));
+            (stopped
+                ? new ExecutorError("cancelled", "the MCP server is shutting down")
+                : this.initialized
+                  ? new ExecutorError(
+                        "resource-limit",
+                        `the executor process ended (code ${code}, signal ${signal}); it may have run out of memory`
+                    )
+                  : new ExecutorError("engine-error", `the executor process failed to start (code ${code})`));
         this.exitReason = reason;
         this.logger.info("Executor %s exited: code=%s signal=%s reason=%s", this.key, code, signal, reason.code);
         for (const pending of [...this.pending.values()]) {
