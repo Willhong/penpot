@@ -5,36 +5,36 @@
 ;; Copyright (c) KALEIDOS SUBSIDIARY SL
 
 (ns app.executor.main
-  "Entry point of the server-side MCP executor process.
+  "Entry point of the `:executor` build.
 
-  CLI mode (experiments and tests):
-    PENPOT_EXECUTOR_TOKEN=<token> node executor.js run <code-file> <file-id> [page-id]
+  Imported by the executor host, the module only exports `app.executor.api`.
+  Run directly, it is a command line tool for experiments:
+
+    PENPOT_EXECUTOR_TOKEN=<token> PENPOT_MCP_SHARED_KEY=<key> \\
+      node executor.js run <code-file> <file-id> [page-id]
+
   opens the file, runs the code as the body of an async function with the
-  plugin API globals, saves, and prints one JSON line with the result."
+  plain plugin context as `penpot` (no plugins runtime, no sandbox), saves,
+  and prints one JSON line with the result and the commit report."
   (:require
    ["node:fs" :as fs]
    ;; Registers the transit handler of the file data objects map, as
    ;; `app.main` does in the browser.
    [app.common.types.objects-map]
-   [app.common.uuid :as uuid]
-   [app.executor.auth :as auth]
+   [app.executor.api :as api]
    [app.executor.session :as session]
-   [app.executor.wasm :as ewasm]
    [app.main.data.workspace]
-   [app.plugins.api :as api]
-   [app.plugins.register :as preg]
-   [app.render-wasm.api :as wasm.api]
    [promesa.core :as p]))
 
 (defn- env
-  [name default]
-  (or (unchecked-get js/process.env name) default))
+  [name]
+  (not-empty (unchecked-get js/process.env name)))
 
 (defn- run-code
-  "Runs `code` as the body of an async function receiving the plugin API
-  globals, as the MCP plugin's `executeCode` handler does."
+  "Runs `code` as the body of an async function receiving the plugin context,
+  with the flags the MCP plugin's `executeCode` handler sets."
   [code]
-  (let [context (api/create-context preg/mcp-plugin-id)
+  (let [context (api/context)
         flags   (.-flags ^js context)]
     (set! (.-naturalChildOrdering ^js flags) true)
     (set! (.-throwValidationErrors ^js flags) true)
@@ -45,39 +45,42 @@
 (defn- run-cli
   [[code-path file-id page-id]]
   (let [code (str (fs/readFileSync code-path))]
-    (auth/install! (env "PENPOT_EXECUTOR_TOKEN" nil)
-                   (env "PENPOT_MCP_SHARED_KEY" nil))
-    (session/install-error-handler!)
-    (when (seq (env "PENPOT_EXECUTOR_TRACE" nil))
+    (when (env "PENPOT_EXECUTOR_TRACE")
       (session/trace-events!))
-    (when (seq (env "PENPOT_EXECUTOR_TRACE_REFLOW" nil))
+    (when (env "PENPOT_EXECUTOR_TRACE_REFLOW")
       (session/trace-reflow!))
-    (p/let [_      (ewasm/init! (env "PENPOT_EXECUTOR_WASM_DIR" "resources/public/js"))
-            opened (session/open! {:file-id (uuid/uuid file-id)
-                                   :page-id (some-> page-id uuid/uuid)})
+    (p/let [_      (api/boot #js {:token (env "PENPOT_EXECUTOR_TOKEN")
+                                  :sharedKey (env "PENPOT_MCP_SHARED_KEY")
+                                  :wasmDir (or (env "PENPOT_EXECUTOR_WASM_DIR")
+                                               "resources/public/js")})
+            opened (api/openFile file-id page-id)
             start  (js/Date.now)
-            result (run-code code)
-            ;; let debounced derived-value commits (text position data)
-            ;; land before saving
-            _      (p/delay (js/parseInt (env "PENPOT_EXECUTOR_SETTLE_MS" "1500")))
-            _      (session/flush!)]
+            _      (api/beginExecution)
+            result (-> (run-code code)
+                       (p/catch (fn [cause]
+                                  (p/do (api/abortExecution)
+                                        (p/rejected cause)))))
+            commit (api/finishExecution #js {})]
       (js/console.log
        (js/JSON.stringify
         #js {:ok true
-             :fileId (str (:file-id opened))
-             :pageId (str (:page-id opened))
-             :wasm (wasm.api/initialized?)
+             :fileId (.-fileId ^js opened)
+             :pageId (.-pageId ^js opened)
              :ms (- (js/Date.now) start)
-             :result result}))
+             :result result
+             :commit commit
+             :status (api/status)
+             :memory (js/process.memoryUsage)}))
       (js/process.exit 0))))
 
 (defn init
   []
-  (let [[_ _ command & args] (js->clj js/process.argv)]
-    (case command
-      "run" (-> (run-cli args)
-                (p/catch (fn [cause]
-                           (js/console.error "executor failed:" cause (ex-data cause))
-                           (js/console.error "pending reflow:" (pr-str (session/pending-reflow)))
-                           (js/process.exit 1))))
-      (js/console.error "usage: executor.js run <code-file> <file-id> [page-id]"))))
+  (let [[_ script command & args] (js->clj js/process.argv)]
+    ;; Imported as a module the host drives it through the exports instead.
+    (when (and (= "run" command)
+               (re-find #"executor\.js$" (str script)))
+      (-> (run-cli args)
+          (p/catch (fn [cause]
+                     (js/console.error "executor failed:" cause (ex-data cause))
+                     (js/console.error "pending reflow:" (pr-str (session/pending-reflow)))
+                     (js/process.exit 1)))))))

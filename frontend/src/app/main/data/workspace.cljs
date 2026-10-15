@@ -381,6 +381,13 @@
                  :file-id (dm/str file-id))
         (rx/of (fetch-bundle file-id features))))))
 
+(defn flush-position-data
+  "Computes the pending text position data now instead of after the debounce.
+  The server-side MCP executor emits it before saving an execution, so the
+  derived values go out in the same request as the edits."
+  []
+  (ptk/data-event ::flush-position-data {}))
+
 (defn initialize-workspace
   [team-id file-id]
   (assert (uuid? team-id) "expected valud uuid for `team-id`")
@@ -518,7 +525,8 @@
                      notifier-s
                      (rx/merge
                       (->> local-commits-s (rx/debounce 1000))
-                      (->> stream (rx/filter dps/force-persist?)))
+                      (->> stream (rx/filter dps/force-persist?))
+                      (->> stream (rx/filter (ptk/type? ::flush-position-data))))
 
                      objects-s
                      (rx/from-atom refs/workspace-page-objects {:emit-current-value? true})

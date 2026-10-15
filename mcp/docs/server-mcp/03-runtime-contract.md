@@ -49,6 +49,7 @@ MCP 클라이언트 ──HTTP(MCP)──▶ mcp server (기존 패키지, 도�
 - 격리 단위는 D12 선택지 1이다. 서로 다른 사용자나 MCP 세션은 프로세스를 공유하지 않는다. 한 세션의 실행끼리는 `storage`와 열린 파일 상태를 공유하고, 전역 변수는 공유하지 않는다(compartment마다 새 전역).
 - sandbox에 주는 전역은 `penpot`, `penpotMgmt`, `penpotUtils`, `storage`, `console`뿐이다. `require`/`import`, 파일 시스템, 네트워크, 타이머 남용을 막는다. `setTimeout`은 실행 제한 시간 안에서만 허용한다.
 - 제한값(D9): 시간 120초, 힙 256 MB, 변경 5,000개, 결과 JSON 10 MB.
+  - 힙은 D9대로 측정해 **512 MB**로 조정했다(2026-10-15). 실행기는 도형 1개 파일에서도 V8 힙을 285 MB(release 빌드) 쓴다. 측정값은 `04-executor.md` §6.
   - 초과하면 그 세션 프로세스를 종료하고 아무것도 저장하지 않은 채 `resource-limit`를 돌려준다. 그 세션의 `storage`는 사라진다.
   - render-wasm 힙은 별도로 센다. 초기 256 MB에 상한을 두고, 이미지 캐시는 exporter의 `wasm-worker-image-cache-size` 방식을 따른다.
 - 취소: mcp server가 취소를 받으면 실행 단위를 종료한다. 저장 요청을 보내기 전이면 `cancelled`(저장 없음)로 응답한다. 이미 보냈으면 저장 결과(revn)로 응답한다(D6).

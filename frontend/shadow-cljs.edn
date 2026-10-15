@@ -173,9 +173,16 @@
 
    :modules
    {:executor {:init-fn app.executor.main/init
+               :exports {boot             app.executor.api/boot
+                         context          app.executor.api/context
+                         status           app.executor.api/status
+                         openFile         app.executor.api/openFile
+                         beginExecution   app.executor.api/beginExecution
+                         finishExecution  app.executor.api/finishExecution
+                         abortExecution   app.executor.api/abortExecution}
                ;; `app.config` reads its settings from globals at load time,
                ;; as the browser's config.js provides them.
-               :prepend-js ";globalThis.penpotPublicURI ??= process.env.PENPOT_PUBLIC_URI; globalThis.penpotFlags ??= process.env.PENPOT_FLAGS ?? '';"}}
+               :prepend-js ";globalThis.penpotPublicURI ??= process.env.PENPOT_PUBLIC_URI; globalThis.penpotFlags ??= process.env.PENPOT_FLAGS ?? ''; globalThis.penpotVersion ??= process.env.PENPOT_VERSION;"}}
 
    :compiler-options
    {:output-feature-set :es2020

@@ -36,6 +36,17 @@
 
 (def force-persist? #(= % ::force-persist))
 
+;; Held by the server-side MCP executor while user code runs: one execution
+;; is saved as one request, so the autosave beat must not save part of it.
+;; `::force-persist` still saves and `::discard-buffered` drops the buffer.
+(defonce autosave-held? (atom false))
+
+(def discard-buffered?
+  "Drops the local commits buffered for the next save. Only the server-side
+  MCP executor emits it, to save nothing of a failed execution; it reloads
+  the file afterwards, so the local state matches the backend again."
+  #(= % ::discard-buffered))
+
 (def ^:private saving-stall-timeout-ms (* 5 60 1000))
 (def ^:private saving-check-interval-ms 30000)
 (def ^:private save-wait-timeout-ms (* 2 60 1000))
@@ -596,9 +607,20 @@
             (rx/merge
              (->> local-commits-s
                   (rx/debounce 3000)
+                  (rx/filter (fn [_] (not @autosave-held?)))
                   (rx/tap #(log/trc :hint "persistence beat")))
              (->> stream
-                  (rx/filter #(= % ::force-persist))))]
+                  (rx/filter #(= % ::force-persist))))
+
+            ;; True between a `::discard-buffered` and the buffer it releases.
+            discard? (volatile! false)
+
+            flush-s
+            (rx/merge
+             notifier-s
+             (->> stream
+                  (rx/filter discard-buffered?)
+                  (rx/tap (fn [_] (vreset! discard? true)))))]
 
         (rx/merge
          (rx/of (recover-persistence))
@@ -650,8 +672,12 @@
          ;; persistence queue
          (->> local-commits-s
               (rx/take-until stoper-s)
-              (rx/buffer-until notifier-s)
+              (rx/buffer-until flush-s)
               (rx/tap (fn [_] (vreset! buffered? false)))
+              (rx/filter (fn [_]
+                           (let [discard @discard?]
+                             (vreset! discard? false)
+                             (not discard))))
               (rx/mapcat merge-commit)
               (rx/map append-commit)
               (rx/finalize (fn []

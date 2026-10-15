@@ -1,0 +1,180 @@
+import { fork, type ChildProcess } from "node:child_process";
+import { createLogger } from "../logger";
+import { ExecutorError } from "./ExecutorError";
+import type {
+    ExecuteParams,
+    ExecutionResult,
+    ExecutorRequest,
+    ExecutorResponse,
+    ExecutorStatus,
+} from "./ExecutorProtocol";
+import type { ExecutorConfig } from "./ExecutorConfig";
+
+type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
+
+/** a request without its correlation ID, which {@link ExecutorProcess} assigns */
+type RequestBody = ExecutorRequest extends infer R ? (R extends ExecutorRequest ? Omit<R, "id"> : never) : never;
+
+/**
+ * Handle of one executor process: the headless workspace of one user and one executor session (D12).
+ *
+ * The process gets no secrets through its environment and a bounded heap; its user's token reaches it
+ * through the `init` request. Requests are correlated by ID. Executions are not queued here: the caller
+ * ({@link ExecutorPool}) runs one at a time.
+ */
+export class ExecutorProcess {
+    private readonly logger = createLogger("ExecutorProcess");
+    private readonly child: ChildProcess;
+    private readonly pending = new Map<number, Pending>();
+    private nextId = 1;
+    private exited = false;
+    private initialized = false;
+    private exitReason: ExecutorError | null = null;
+
+    /** time of the last request, for idle eviction */
+    public lastUsed = Date.now();
+
+    private constructor(
+        private readonly config: ExecutorConfig,
+        public readonly key: string
+    ) {
+        this.child = fork(config.childEntry, [], {
+            // only what the executor needs: no MCP server secrets, no user tokens
+            env: {
+                PATH: process.env.PATH ?? "",
+                NODE_ENV: process.env.NODE_ENV ?? "production",
+                PENPOT_EXECUTOR_BUNDLE: config.bundlePath,
+                PENPOT_EXECUTOR_WASM_DIR: config.wasmDir,
+                PENPOT_EXECUTOR_SETTLE_TIMEOUT_MS: String(config.settleTimeoutMs),
+                PENPOT_PUBLIC_URI: config.publicUri,
+                PENPOT_FLAGS: config.flags,
+                PENPOT_VERSION: config.version,
+            },
+            // The process boundary is the security boundary (D12), not the SES compartment alone: the
+            // Node permission model limits it to reading the code it runs, with no file writes, no child
+            // processes and no worker threads. Network egress is limited by the deployment (PEN-21).
+            execArgv: [
+                `--max-old-space-size=${config.heapMb}`,
+                "--permission",
+                ...config.fsRead.map((path) => `--allow-fs-read=${path}`),
+            ],
+            stdio: ["ignore", "inherit", "inherit", "ipc"],
+            serialization: "advanced",
+        });
+        this.child.on("message", (response: ExecutorResponse) => this.onResponse(response));
+        this.child.on("exit", (code, signal) => this.onExit(code, signal));
+    }
+
+    /**
+     * Starts an executor process and boots its workspace for the user of `token`.
+     */
+    static async start(config: ExecutorConfig, key: string, token: string): Promise<ExecutorProcess> {
+        const process = new ExecutorProcess(config, key);
+        try {
+            await process.request<ExecutorStatus>({ type: "init", token, sharedKey: config.sharedKey });
+            process.initialized = true;
+        } catch (error) {
+            process.kill(null);
+            throw error;
+        }
+        return process;
+    }
+
+    get alive(): boolean {
+        return !this.exited;
+    }
+
+    /**
+     * Runs one execution. When it exceeds `timeoutMs`, the process is killed and the execution fails with
+     * `resource-limit`; nothing is saved, since an execution saves only at its end.
+     */
+    execute(params: ExecuteParams, timeoutMs: number, signal?: AbortSignal): Promise<ExecutionResult> {
+        return this.request<ExecutionResult>({ type: "execute", params }, timeoutMs, signal);
+    }
+
+    status(): Promise<ExecutorStatus> {
+        return this.request<ExecutorStatus>({ type: "status" });
+    }
+
+    /**
+     * Ends the process. Pending requests fail with `reason`, or `cancelled` when none is given.
+     */
+    kill(reason: ExecutorError | null): void {
+        if (!this.exited) {
+            this.exitReason = reason ?? new ExecutorError("cancelled", "the executor session was closed");
+            this.child.kill("SIGKILL");
+        }
+    }
+
+    private request<T>(message: RequestBody, timeoutMs?: number, signal?: AbortSignal): Promise<T> {
+        if (this.exited) {
+            return Promise.reject(this.exitReason ?? new ExecutorError("engine-error", "the executor has exited"));
+        }
+        this.lastUsed = Date.now();
+        const id = this.nextId++;
+        return new Promise<T>((resolve, reject) => {
+            let timer: NodeJS.Timeout | undefined;
+            const onAbort = () =>
+                this.kill(new ExecutorError("cancelled", "the request was cancelled before the save"));
+            const settle = () => {
+                clearTimeout(timer);
+                signal?.removeEventListener("abort", onAbort);
+                this.pending.delete(id);
+            };
+            this.pending.set(id, {
+                resolve: (value) => {
+                    settle();
+                    resolve(value as T);
+                },
+                reject: (error) => {
+                    settle();
+                    reject(error);
+                },
+            });
+            if (timeoutMs) {
+                timer = setTimeout(
+                    () =>
+                        this.kill(
+                            new ExecutorError(
+                                "resource-limit",
+                                `the execution exceeded the time limit of ${timeoutMs} ms`
+                            )
+                        ),
+                    timeoutMs
+                );
+            }
+            signal?.addEventListener("abort", onAbort, { once: true });
+            this.child.send({ ...message, id } as ExecutorRequest);
+        });
+    }
+
+    private onResponse(response: ExecutorResponse): void {
+        const pending = this.pending.get(response.id);
+        if (!pending) {
+            return;
+        }
+        if (response.ok) {
+            pending.resolve(response.value);
+        } else {
+            pending.reject(ExecutorError.fromData(response.error));
+        }
+    }
+
+    private onExit(code: number | null, signal: NodeJS.Signals | null): void {
+        this.exited = true;
+        const reason =
+            this.exitReason ??
+            (this.initialized
+                ? new ExecutorError(
+                      "resource-limit",
+                      `the executor process ended (code ${code}, signal ${signal}); it may have run out of memory`
+                  )
+                : new ExecutorError("engine-error", `the executor process failed to start (code ${code})`));
+        this.exitReason = reason;
+        this.logger.info("Executor %s exited: code=%s signal=%s reason=%s", this.key, code, signal, reason.code);
+        for (const pending of [...this.pending.values()]) {
+            pending.reject(reason);
+        }
+        this.pending.clear();
+    }
+}

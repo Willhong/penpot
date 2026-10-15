@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# Builds the server-side MCP executor (shadow-cljs build `:executor`) into
+# target/executor/: the workspace data layer and the plugin API for plain
+# Node. See mcp/docs/server-mcp/.
+#
+#   scripts/build-executor [compile|release]
+#
+# The bundle loads its translations next to itself, like the browser does
+# from js/, so the built translation files are copied there. They come from
+# the app assets build (`pnpm run build:app:assets` or the watch); render-wasm
+# must be built for the frontend target (`../render-wasm/build frontend`).
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+MODE="${1:-compile}"
+
+clojure -M:dev:shadow-cljs "$MODE" executor
+cp resources/public/js/translation.*.js target/executor/
