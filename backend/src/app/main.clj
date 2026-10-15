@@ -481,6 +481,7 @@
 
    ::http.ws/routes
    {::db/pool           (ig/ref ::db/pool)
+    ::setup/shared-keys (ig/ref ::setup/shared-keys)
     ::mtx/metrics       (ig/ref ::mtx/metrics)
     ::mbus/msgbus       (ig/ref ::mbus/msgbus)
     ::setup/props       (ig/ref ::setup/props)
@@ -732,7 +733,8 @@
     :nexus           (cf/get :nexus-shared-key)
     :admin-console   (cf/get :admin-console-shared-key)
     :exporter        (cf/get :exporter-shared-key)
-    :media-processor (cf/get :media-processor-shared-key)}
+    :media-processor (cf/get :media-processor-shared-key)
+    :mcp             (cf/get :mcp-shared-key)}
 
    ::setup/clock
    {}

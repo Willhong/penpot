@@ -8,6 +8,7 @@
   (:require
    [app.common.uuid :as uuid]
    [app.db :as db]
+   [app.http.access-token :as actoken]
    [app.http.websocket :as ws]
    [app.msgbus :as mbus]
    [app.nitrate :as nitrate]
@@ -145,3 +146,30 @@
         (t/is (nil?
                ((get-method ws/handle-message :pointer-update)
                 cfg empty-wsp msg)))))))
+
+(defn- handler-error
+  "Calls the notifications handler with a non-upgrade request and returns the
+  data of the error it raises: `:authentication` when it found no profile,
+  `:websocket-request-expected` once authentication passed."
+  [cfg request]
+  (try
+    (#'ws/http-handler cfg request)
+    nil
+    (catch Exception cause
+      (select-keys (ex-data cause) [:type :code]))))
+
+(t/deftest notifications-accept-token-only-from-mcp-service
+  (let [profile-id (uuid/next)
+        cfg        {:app.setup/shared-keys {:mcp "mcp-secret"}}
+        request    (fn [headers]
+                     (-> (th/make-dummy-request {:headers headers})
+                         (assoc :params {:session-id (str (uuid/next))})
+                         (assoc ::actoken/profile-id profile-id)))]
+
+    (t/testing "a token holder other than the MCP service is not authenticated"
+      (t/is (= :authentication (:type (handler-error cfg (request {})))))
+      (t/is (= :authentication (:type (handler-error cfg (request {"x-shared-key" "mcp wrong"}))))))
+
+    (t/testing "the MCP service is authenticated by the user's token"
+      (t/is (= :websocket-request-expected
+               (:code (handler-error cfg (request {"x-shared-key" "mcp mcp-secret"}))))))))

@@ -154,6 +154,7 @@
     [:admin-console-shared-key {:optional true} :string]
     [:nexus-shared-key {:optional true} :string]
     [:media-processor-shared-key {:optional true} :string]
+    [:mcp-shared-key {:optional true} :string]
     [:management-api-key {:optional true} :string]
 
     [:telemetry-uri {:optional true} :string]

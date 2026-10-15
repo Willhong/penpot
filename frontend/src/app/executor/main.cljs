@@ -45,7 +45,8 @@
 (defn- run-cli
   [[code-path file-id page-id]]
   (let [code (str (fs/readFileSync code-path))]
-    (auth/install! (env "PENPOT_EXECUTOR_TOKEN" nil))
+    (auth/install! (env "PENPOT_EXECUTOR_TOKEN" nil)
+                   (env "PENPOT_MCP_SHARED_KEY" nil))
     (session/install-error-handler!)
     (when (seq (env "PENPOT_EXECUTOR_TRACE" nil))
       (session/trace-events!))

@@ -10,14 +10,23 @@
   The workspace code talks to the backend with `fetch` and a `WebSocket`, and
   relies on the browser's session cookie. The executor has no cookie: it wraps
   both globals so every request to the backend origin carries
-  `Authorization: Token <user token>`. Requests elsewhere (font CDNs) pass
-  through untouched, so the token never leaves the backend origin."
+  `Authorization: Token <user's MCP token>` and the `mcp` shared key, which
+  is how the backend tells the MCP service apart from other holders of an
+  MCP token (D11). Requests elsewhere (font CDNs) pass through untouched, so
+  neither value leaves the backend origin."
   (:require
    [app.common.uri :as u]
    [app.config :as cf]
    [cuerdas.core :as str]))
 
 (defonce ^:private token nil)
+(defonce ^:private shared-key nil)
+
+(defn- auth-headers
+  []
+  (cond-> {"authorization" (str "Token " token)}
+    (some? shared-key)
+    (assoc "x-shared-key" (str "mcp " shared-key))))
 
 (defn- origin
   [uri]
@@ -26,7 +35,10 @@
 
 (defn- backend-url?
   [url]
-  (str/starts-with? (str url) (origin cf/public-uri)))
+  (let [url    (str url)
+        origin (origin cf/public-uri)]
+    (or (= url origin)
+        (str/starts-with? url (str origin "/")))))
 
 (defn- request-url
   [input]
@@ -42,7 +54,8 @@
                    (if (backend-url? (request-url input))
                      (let [init    (js/Object.assign #js {} init)
                            headers (js/Headers. (unchecked-get init "headers"))]
-                       (.set headers "authorization" (str "Token " token))
+                       (doseq [[k v] (auth-headers)]
+                         (.set headers k v))
                        (unchecked-set init "headers" headers)
                        ;; There is no cookie jar; `include` would only make
                        ;; undici reject some redirect combinations.
@@ -55,7 +68,7 @@
   (let [klass (fn [url protocols]
                 (if (backend-url? (str/replace (str url) #"^ws" "http"))
                   (new native url #js {:protocols (or protocols #js [])
-                                       :headers #js {"authorization" (str "Token " token)}})
+                                       :headers (clj->js (auth-headers))})
                   (new native url protocols)))]
     (unchecked-set klass "CONNECTING" (.-CONNECTING native))
     (unchecked-set klass "OPEN" (.-OPEN native))
@@ -66,9 +79,11 @@
 (defonce ^:private installed? (atom false))
 
 (defn install!
-  "Routes all backend traffic of this process through `user-token`."
-  [user-token]
+  "Routes all backend traffic of this process through `user-token`, sent
+  along with the MCP service's `mcp-shared-key` when given."
+  [user-token mcp-shared-key]
   (set! token user-token)
+  (set! shared-key mcp-shared-key)
   (when (compare-and-set! installed? false true)
     (install-fetch! (.bind js/fetch js/globalThis))
     (install-websocket! js/WebSocket)))

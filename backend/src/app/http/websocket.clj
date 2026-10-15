@@ -16,12 +16,14 @@
    [app.common.time :as ct]
    [app.common.uuid :as uuid]
    [app.db :as db]
+   [app.http.access-token :as actoken]
    [app.http.session :as session]
    [app.metrics :as mtx]
    [app.msgbus :as mbus]
    [app.nitrate :as nitrate]
    [app.rpc.commands.files :as files]
    [app.rpc.commands.teams :as teams]
+   [app.setup :as-alias setup]
    [app.util.websocket :as ws]
    [integrant.core :as ig]
    [promesa.exec.csp :as sp]
@@ -304,8 +306,14 @@
   message)
 
 (defn- http-handler
-  [cfg {:keys [params ::session/profile-id] :as request}]
-  (let [session-id (some-> params :session-id uuid/parse*)]
+  [cfg {:keys [params] :as request}]
+  (let [session-id (some-> params :session-id uuid/parse*)
+        ;; A browser authenticates with its session cookie. The server-side
+        ;; MCP executor has none: it presents the user's token with the MCP
+        ;; shared key. Other token holders keep using RPC only.
+        profile-id (or (::session/profile-id request)
+                       (when (actoken/mcp-service-request? request (::setup/shared-keys cfg))
+                         (::actoken/profile-id request)))]
     (when-not (uuid? session-id)
       (ex/raise :type :validation
                 :code :missing-session-id
@@ -350,5 +358,6 @@
 
 (defmethod ig/init-key ::routes
   [_ cfg]
-  ["/ws/notifications" {:middleware [[session/authz cfg]]
+  ["/ws/notifications" {:middleware [[session/authz cfg]
+                                     [actoken/authz cfg]]
                         :handler (partial http-handler cfg)}])

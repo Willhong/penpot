@@ -121,6 +121,48 @@
     (t/is (= #{} (:app.http.access-token/perms response)))
     (t/is (= (:id profile) (:app.http.access-token/profile-id response)))))
 
+(t/deftest access-token-authz-accepts-mcp-token-only-from-mcp-service
+  (let [profile   (th/create-profile* 1)
+        mcp-token (db/tx-run! th/*system* app.rpc.commands.access-token/create-access-token
+                              (:id profile) "mcp" nil "mcp")
+        api-token (db/tx-run! th/*system* app.rpc.commands.access-token/create-access-token
+                              (:id profile) "api" nil nil)
+        cfg       (assoc th/*system* :app.setup/shared-keys {:mcp "mcp-secret"})
+        handler   (#'app.http.access-token/wrap-authz identity cfg)
+        ;; what `mw/auth` leaves for an MCP token: its issuer is not
+        ;; `access-token`, so `decode-token` yields no claims
+        mcp-auth  {:type :token :token (:token mcp-token) :claims nil}
+        request   (fn [auth headers]
+                    (-> (th/make-dummy-request {:headers headers})
+                        (assoc ::http/auth-data auth)))]
+
+    (t/testing "an MCP token alone is not an access token"
+      (let [response (handler (request mcp-auth {}))]
+        (t/is (nil? (:app.http.access-token/profile-id response)))))
+
+    (t/testing "a wrong or foreign shared key does not help"
+      (let [response (handler (request mcp-auth {"x-shared-key" "mcp wrong"}))]
+        (t/is (nil? (:app.http.access-token/profile-id response))))
+      (let [response (handler (request mcp-auth {"x-shared-key" "exporter mcp-secret"}))]
+        (t/is (nil? (:app.http.access-token/profile-id response)))))
+
+    (t/testing "the MCP service may present the user's MCP token"
+      (let [response (handler (request mcp-auth {"x-shared-key" "mcp mcp-secret"}))]
+        (t/is (= (:id profile) (:app.http.access-token/profile-id response)))
+        (t/is (= "mcp" (:app.http.access-token/type response)))))
+
+    (t/testing "the MCP shared key never turns an access token into an MCP one"
+      (let [claims   (app.http.access-token/decode-token th/*system* (:token api-token))
+            response (handler (request {:type :token :token (:token api-token) :claims claims}
+                                       {"x-shared-key" "mcp mcp-secret"}))]
+        (t/is (= (:id profile) (:app.http.access-token/profile-id response)))
+        (t/is (not= "mcp" (:app.http.access-token/type response)))))
+
+    (t/testing "a deleted MCP token is rejected even from the MCP service"
+      (db/delete! th/*system* :access-token {:id (:id mcp-token)})
+      (let [response (handler (request mcp-auth {"x-shared-key" "mcp mcp-secret"}))]
+        (t/is (nil? (:app.http.access-token/profile-id response)))))))
+
 (defrecord MethodAwareDummyRequest [req-method headers]
   yreq/IRequest
   (method [_] req-method)

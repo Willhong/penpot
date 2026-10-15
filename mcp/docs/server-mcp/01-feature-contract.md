@@ -80,6 +80,16 @@
 
 **결정: 선택지 1.** 기본 만료 기한은 현재 화면 정책을 따르고, 이 문서에서 새로 정하지 않는다.
 
+### D11 [사용자 결정 · 2026-10-15 확정] backend가 MCP token을 어떻게 인정할 것인가
+
+**[사실]** MCP token의 발급자는 `urn:penpot:mcp-token`이다. backend는 발급자가 `access-token`인 token만 API 인증에 받는다(`backend/src/app/http/access_token.clj`). upstream은 이를 테스트 `mcp-tokens-cannot-be-used-as-access-tokens`로 고정했다. 따라서 D2와 위 기술 결정('모든 backend 호출에 그 사용자 token')을 함께 지키려면 backend를 고쳐야 한다.
+
+- 선택지 1 (결정): backend는 MCP token을 서버 MCP 실행기가 `mcp` 공유 키(`X-Shared-Key: mcp <key>`, exporter와 같은 방식)와 함께 보낼 때만 인정한다. 공유 키만으로는 권한이 없다. token 만료·폐기 검사는 그대로다. MCP token을 다른 곳에서 API token처럼 쓸 수 없다는 upstream 규칙도 그대로다.
+- 선택지 2: MCP token을 일반 API token처럼 받는다.
+- 선택지 3: D2를 바꿔 일반 API token을 받는다.
+
+구현: `backend/src/app/http/access_token.clj`(`mcp-service-request?`), 공유 키 설정 `PENPOT_MCP_SHARED_KEY`(없으면 secret key에서 파생). 알림 WebSocket도 같은 조건에서만 token으로 인증한다. 공유 키는 D3의 'AI(사용자명)' 구분에도 쓴다.
+
 ### D3 [사용자 결정 · 2026-10-15 확정] 서버 MCP 작업을 누구의 이름으로 표시할 것인가
 
 - 선택지 1: token 주인의 이름으로만 표시한다(현재와 같음).
@@ -201,5 +211,6 @@
 | D7 | 반영 지연 기준 | 단일 p95 1초, 묶음 p95 3초 | 2026-10-15 확정 |
 | D8 | UI 전용 member 대응 | §6 표, 화면 조작은 'AI 따라가기'를 켠 탭에만 적용 | 2026-10-15 확정 |
 | D9 | 자원 제한·로그 | §7 값 | 2026-10-15 확정 |
+| D11 | backend의 MCP token 인정 방식 | 서버 MCP 실행기가 `mcp` 공유 키와 함께 보낼 때만 | 2026-10-15 확정 |
 
 서버 실행 구조('브라우저 없이'를 어디까지로 볼지)는 기술 조사 결과에 달려 있어 `03-runtime-contract.md`의 D10에서 정했다(2026-10-15 확정).
