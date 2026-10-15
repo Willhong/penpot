@@ -44,3 +44,19 @@ editor가 MCP token과 `?executor=server`로 `execute_code`를 부른다. 브라
 - 버전 복원 뒤 파일을 다시 읽을 때까지 실행을 끝내지 않는다.
 - 실행이 저장한 revn을 기억해, 다음 실행의 `revnBefore`·`lagged`를 바로 잡는다.
 - 처리되지 않은 예외가 프로세스를 끝내지 않는다(브라우저 콘솔처럼 기록만).
+
+## 비교 방법 (PEN-5부터, `experiments/dual_run.py`)
+
+같은 Plugin API 시나리오를 두 곳에서 각각 새 파일에 실행한다.
+- 브라우저: editor 탭(renderer wasm)에서 MCP 플러그인과 같은 조건으로 실행한다(MCP 플러그인 id, 두 flag, strict mode, plugins runtime처럼 내장 객체 동결과 반환값 harden). `browser_run.js`.
+- 서버: 실제 MCP 호출(`?executor=server`). 그동안 owner 탭이 서버 쪽 파일을 열어 두고, 새로고침 없이 결과를 받는지와 새로고침 뒤에도 같은지 본다.
+
+비교: 시나리오 반환값과 backend에 저장된 모든 도형(이름으로 짝지음). id는 이름으로 바꾸고, 숫자는 소수 2자리로 맞춘다(`03` §6).
+
+## PEN-5 기본 도형 (2026-10-15, `experiments/pen5_basic_shapes.py`)
+
+| 시나리오 | 내용 | 결과 |
+|---|---|---|
+| `pen5_shapes.js` | 보드·사각형·타원 생성, 이름·위치·크기·모서리(전체·각각)·투명도·혼합·비율 고정·스크롤 고정·숨김·잠금·`visible`, 단색·선형·방사형 채우기, 선(점선·외곽·그라데이션), 그림자 2종, 흐림, 배경 흐림, 내보내기 설정 2개, plugin data·shared plugin data, 보드 clipContent·showInViewMode, 읽은 배열을 고쳐도 도형은 그대로인지, clone, remove, `root`·`getShapeById`·`findShapes`·`parent`·`bounds`·`center` | 반환값 차이 0, 저장 도형 7개 차이 0. 관찰 탭 0.21초에 반영, 새로고침 뒤 같음 |
+| `pen5_refusals.js` | 잘못된 값 13종(투명도 2, 음수 크기, 없는 혼합 모드, 잘못된 색·투명도·선 모양·그림자 모양·내보내기 형식·모서리·이름·plugin data 값, 사각형의 clipContent, 지운 도형 수정) | 거부 문구와 남은 값이 브라우저와 같음. 저장 도형 차이 0 |
+| 서버만 | viewer의 수정, 열려 있지 않은 페이지의 도형 수정 | `not-found` / 브라우저와 같은 문구로 거부, 변경 없음 |

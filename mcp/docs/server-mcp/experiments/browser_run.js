@@ -1,6 +1,7 @@
 // Runs Plugin API code in an mcp-verify browser tab, the way the MCP plugin's
 // executeCode handler does (MCP plugin id, naturalChildOrdering and
-// throwValidationErrors on), and waits for the workspace to save.
+// throwValidationErrors on, values hardened as the plugins runtime does), and
+// waits for the workspace to save.
 //
 // Runs inside `ego-browser nodejs`; prepend the options as a global:
 //   { echo 'globalThis.RUN = {...}'; cat browser_run.js; } | ego-browser nodejs
@@ -45,9 +46,25 @@ await page.evaluate(
       const context = app.plugins.api.create_context("96dfa740-005d-8020-8007-55ede24a2bae");
       context.flags.naturalChildOrdering = true;
       context.flags.throwValidationErrors = true;
+      // What the plugins runtime does to the API a plugin sees: intrinsics
+      // frozen when the first plugin loads, every value handed out hardened.
       try {
-        const fn = new Function("penpot", "penpotMgmt", "storage", `return (async () => { ${code} })();`);
-        const result = await fn(context, context.management, {});
+        globalThis.hardenIntrinsics();
+      } catch (e) {
+        // already hardened, by an earlier run or a loaded plugin
+      }
+      const safe = (target) =>
+        new Proxy(target, {
+          get(obj, prop, receiver) {
+            const value = Reflect.get(obj, prop, receiver);
+            const out = (v) => (v === null || v === undefined ? v : harden(v));
+            return typeof value === "function" ? (...args) => out(value.apply(obj, args)) : out(value);
+          },
+        });
+      try {
+        // plugin code runs in an SES compartment, which is strict mode
+        const fn = new Function("penpot", "penpotMgmt", "storage", `"use strict"; return (async () => { ${code} })();`);
+        const result = await fn(safe(context), safe(context.management), {});
         await new Promise((resolve) => setTimeout(resolve, settle));
         app.main.store.emit_BANG_(cljs.core.keyword("app.main.data.persistence", "force-persist"));
         await new Promise((resolve) => setTimeout(resolve, 1500));
