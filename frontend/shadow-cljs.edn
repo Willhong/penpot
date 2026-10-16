@@ -183,6 +183,7 @@
                          beginExecution   app.executor.api/beginExecution
                          finishExecution  app.executor.api/finishExecution
                          abortExecution   app.executor.api/abortExecution
+                         errorCode        app.executor.api/errorCode
                          applyHistory     app.executor.api/applyHistory
                          historyStatus    app.executor.api/historyStatus
                          follow           app.executor.api/follow}

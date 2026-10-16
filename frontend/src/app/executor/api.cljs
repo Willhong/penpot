@@ -80,6 +80,15 @@
     (unchecked-set error "code" contract)
     error))
 
+(defn ^:export errorCode
+  "Contract code of an error the user code let through, for the one case
+  the contract names: the backend refusing the MCP token (deleted or
+  expired while the session lives) is `forbidden`. Nil otherwise; the host
+  reports those as `execution-error`, as the browser plugin does."
+  [cause]
+  (when (= :authentication (:type (ex-data cause)))
+    "forbidden"))
+
 (defn- with-contract-errors
   [promise]
   (p/catch promise (fn [cause] (p/rejected (contract-error cause)))))

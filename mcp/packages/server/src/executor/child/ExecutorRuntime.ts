@@ -240,6 +240,11 @@ export class ExecutorRuntime {
         if (typeof code === "string" && code !== "engine-error" && ExecutorRuntime.WORKSPACE_CODES.has(code)) {
             return new ExecutorError(code as any, (error as Error).message);
         }
+        if (this.engine.errorCode(error) === "forbidden") {
+            // a backend call of the code was refused: the MCP key was deleted or expired after the session
+            // started (03-runtime-contract §7)
+            return new ExecutorError("forbidden", "the MCP key is no longer valid (deleted or expired)");
+        }
         const status = this.engine.status();
         if (status.fileId && !status.canEdit) {
             // the plugin API fails in its own way on a read-only workspace; the contract answers like the

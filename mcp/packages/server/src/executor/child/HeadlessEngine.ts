@@ -38,6 +38,7 @@ interface ExecutorBundle {
     beginExecution(options: { ifUnchangedSinceRevn?: number }): void;
     finishExecution(options: { settleTimeout: number; maxChanges: number }): Promise<CommitReport>;
     abortExecution(): Promise<void>;
+    errorCode(error: unknown): string | null;
     applyHistory(direction: "undo" | "redo"): Promise<number>;
     historyStatus(): { undo: number; redo: number };
     follow(action: FollowAction): number;
@@ -149,6 +150,14 @@ export class HeadlessEngine {
      */
     abortExecution(): Promise<void> {
         return this.bundle.abortExecution();
+    }
+
+    /**
+     * Contract code of an error the user code let through, when the contract names it: `forbidden` for the
+     * backend refusing the MCP token (deleted or expired while the session lives). Null otherwise.
+     */
+    errorCode(error: unknown): "forbidden" | null {
+        return this.bundle.errorCode(error) === "forbidden" ? "forbidden" : null;
     }
 
     /**
