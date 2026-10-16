@@ -20,6 +20,7 @@
 | [04-executor.md](04-executor.md) | PEN-10 | 서버 실행기 구성 요소와 interface, 실행 순서, 세션, 측정값 | interface 확정, PEN-3 연결 |
 | [05-results.md](05-results.md) | PEN-22 | 티켓별 실제 MCP 시험 결과 | PEN-3~24 |
 | [06-integration.md](06-integration.md) | PEN-9 | 한 빌드로 본 통합 검증: 회귀, 교차 기능, 복구, 사용자 결정, 기능 목록 대응 | 완료 |
+| [07-deployment.md](07-deployment.md) | PEN-21 | 사용 안내, 운영 배포 구성·절차, 롤백, 운영 확인 결과 | 배포 완료 |
 
 ## 도구
 
@@ -35,6 +36,7 @@
 - `experiments/pen9_integrated.py` + `.js`: 기능을 엮은 시나리오, 브라우저 0개 실행, 복구·지연(D7)·presence(D3)·renderer(D13) 시험.
 - `experiments/pen9_gaps.py` + `pen9_gaps_*.js`: 다른 시험이 쓰지 않은 Plugin API member를 실행한다.
 - `experiments/pen9_coverage.py`: 실행기가 실제로 쓴 member를 기록해 기능 목록과 맞춘다(`run`, `report`).
+- `experiments/pen21_auth_check.py`: 운영에서 임시 프로필로 MCP 키 회수·권한 거부를 시험하고 프로필을 지운다.
 - 검증 스택: 저장소 루트의 `scripts/mcp-verify-env`.
 
 ## 다음 구현 작업(PEN-22)이 시작할 때

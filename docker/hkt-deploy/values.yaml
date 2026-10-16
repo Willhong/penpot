@@ -1,0 +1,56 @@
+# Helm values for design.hktlabs.com (chart penpot/penpot 1.11.3), layered
+# over the release's base values (`helm get values penpot -n penpot`).
+# Image tags come from the command line (`--set-string`), see README.md.
+# The admin console stays on the upstream image: its source is not here.
+config:
+  # The backend reads an `Authorization: Token` header only with
+  # `enable-access-tokens`; without it every server execution is refused
+  # with "the token does not identify a user".
+  flags: >-
+    enable-registration enable-login-with-password
+    disable-email-verification enable-mcp enable-admin-console
+    enable-access-tokens
+frontend:
+  image:
+    repository: harbor.hktlabs.com/library/penpot-frontend
+backend:
+  image:
+    repository: harbor.hktlabs.com/library/penpot-backend
+exporter:
+  image:
+    repository: harbor.hktlabs.com/library/penpot-exporter
+mcp:
+  image:
+    repository: harbor.hktlabs.com/library/penpot-mcp-executor
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 8Gi
+  extraEnvs:
+    # Both paths: the browser plugin by default, the server with
+    # `executor=server` in the connection URL.
+    - name: PENPOT_MCP_EXECUTOR
+      value: optional
+    # The frontend nginx, which also proxies the backend API
+    - name: PENPOT_MCP_EXECUTOR_PUBLIC_URI
+      value: http://penpot:8080
+    - name: PENPOT_PUBLIC_URI
+      value: https://design.hktlabs.com
+    - name: PENPOT_FLAGS
+      value: >-
+        enable-registration enable-login-with-password
+        disable-email-verification enable-mcp enable-admin-console
+        enable-access-tokens
+    # The `mcp` shared key is derived from it, as the backend does
+    - name: PENPOT_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: penpot-secrets
+          key: api-secret-key
+    # The defaults follow the host's CPUs and memory (32 / 124 GB)
+    - name: PENPOT_MCP_EXECUTOR_MAX
+      value: "8"
+    - name: PENPOT_MCP_EXECUTOR_SESSIONS_MAX
+      value: "8"

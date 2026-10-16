@@ -1,0 +1,13 @@
+# The MCP image with the server-side executor (PEN-22). The release MCP
+# image only has the MCP server; the executor also needs the frontend
+# `:executor` build, the frontend node_modules it imports from, and
+# render-wasm. The layout matches what ExecutorConfig expects.
+ARG BASE=penpotapp/mcp:latest
+FROM ${BASE}
+
+USER root
+COPY --chown=node:node executor-frontend/ /opt/penpot/frontend/
+USER node
+
+ENV PENPOT_MCP_EXECUTOR_BUNDLE=/opt/penpot/frontend/target/executor/executor.js \
+    PENPOT_MCP_EXECUTOR_WASM_DIR=/opt/penpot/frontend/wasm
